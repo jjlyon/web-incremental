@@ -27,6 +27,7 @@ export type UpgradeId =
   | 'auto_scan_daemon_2'
   | 'cataloged_patterns'
   | 'signal_mapping'
+  | 'passive_research'
   | 'probe_blueprints'
   | 'relay_amplification'
   | 'persistent_scripts'
@@ -47,6 +48,7 @@ export interface UpgradeDef {
   cost: number;
   currencyType: CurrencyType;
   repeatable?: boolean;
+  costGrowth?: number;
   maxLevel?: number;
   prerequisites?: (state: GameState) => boolean;
 }
@@ -80,6 +82,7 @@ export type TabName =
   | 'Control'
   | 'Generators'
   | 'Upgrades'
+  | 'DP Upgrades'
   | 'Findings'
   | 'Prestige'
   | 'Stats';

@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { TabButton } from './components/TabButton';
 import { GENERATORS, MILESTONES, UPGRADES } from './game/data';
-import { canPrestige, canPurchaseUpgrade, formatNumber, getBuyMaxCount, getClickPower, getGeneratorCost, getPrestigeProjection, getTotalSps, runSanityChecks } from './game/economy';
+import { canPrestige, canPurchaseUpgrade, formatNumber, getBuyMaxCount, getClickPower, getGeneratorCost, getPassiveDpPerSecond, getPrestigeProjection, getTotalSps, getUpgradeCost, runSanityChecks } from './game/economy';
 import { clearSave, exportSave, importSave, loadGame, saveGame } from './game/save';
 import { createInitialState, gameReducer, verifyPrestigeReset } from './game/state';
 import { GeneratorId, TabName } from './game/types';
 
-const tabs: TabName[] = ['Control', 'Generators', 'Upgrades', 'Findings', 'Prestige', 'Stats'];
+const tabs: TabName[] = ['Control', 'Generators', 'Upgrades', 'DP Upgrades', 'Findings', 'Prestige', 'Stats'];
 const OFFLINE_TICK_CHUNK_SECONDS = 1;
 const MAX_OFFLINE_SECONDS = 60 * 60;
 
@@ -106,6 +106,7 @@ function App() {
   const sps = useMemo(() => getTotalSps(state), [state]);
   const clickPower = useMemo(() => getClickPower(state), [state]);
   const prestigeGain = getPrestigeProjection(state.totalSignalEarned);
+  const passiveDpPerSecond = getPassiveDpPerSecond(state);
   const unlockedBuyMax = state.upgrades.unlock_buy_max > 0;
   const hasAffordableGenerator = GENERATORS.some((gen) => {
     const owned = state.generators[gen.id];
@@ -154,19 +155,20 @@ function App() {
     </div>
   );
 
-  const renderUpgrades = () => (
+  const renderUpgrades = (title: string, currencies: Array<'signal' | 'dp' | 'relays'>) => (
     <div className="panel">
-      <h3>Upgrades</h3>
-      {UPGRADES.map((up) => {
+      <h3>{title}</h3>
+      {UPGRADES.filter((up) => currencies.includes(up.currencyType)).map((up) => {
         const level = state.upgrades[up.id];
         const purchased = !up.repeatable && level > 0;
         const canBuy = canPurchaseUpgrade(state, up.id);
+        const cost = getUpgradeCost(state, up.id);
         const hidden = up.prerequisites && !up.prerequisites(state) && level === 0;
         if (hidden) return null;
         return (
           <div className="row" key={up.id}>
             <div>
-              <strong>{up.name}</strong> [{up.currencyType.toUpperCase()} {formatNumber(up.cost)}] {up.repeatable ? `(Lv ${level})` : purchased ? '(Owned)' : ''}
+              <strong>{up.name}</strong> [{up.currencyType.toUpperCase()} {formatNumber(cost)}] {up.repeatable ? `(Lv ${level})` : purchased ? '(Owned)' : ''}
               <div className="muted">{up.description}</div>
             </div>
             {!purchased && (
@@ -183,6 +185,7 @@ function App() {
   const renderFindings = () => (
     <div className="panel">
       <h3>Findings & Discovery Points</h3>
+      <p className="muted">Passive DP gain: {formatNumber(passiveDpPerSecond)}/s</p>
       <label>
         <input type="checkbox" checked={state.autoClaimFindings} onChange={() => dispatch({ type: 'TOGGLE_AUTO_CLAIM' })} /> Auto-claim findings
       </label>
@@ -246,6 +249,7 @@ function App() {
         <div>Noise: {formatNumber(state.noise)}</div>
         <div>DP: {formatNumber(state.dp)}</div>
         <div>Relays: {formatNumber(state.relays)}</div>
+        <div>Passive DP/s: {formatNumber(passiveDpPerSecond)}</div>
       </div>
 
       <div className="tabs">
@@ -253,6 +257,7 @@ function App() {
           const hasAttention =
             (tab === 'Generators' && hasAffordableGenerator) ||
             (tab === 'Upgrades' && hasAffordableUpgrade) ||
+            (tab === 'DP Upgrades' && hasAffordableUpgrade) ||
             (tab === 'Findings' && hasClaimableFinding) ||
             (tab === 'Prestige' && canPrestigeNow);
           return <TabButton key={tab} tab={tab} active={state.currentTab === tab} hasAttention={hasAttention} onClick={(t) => dispatch({ type: 'SET_TAB', tab: t })} />;
@@ -279,7 +284,8 @@ function App() {
       )}
 
       {state.currentTab === 'Generators' && renderGenerators()}
-      {state.currentTab === 'Upgrades' && renderUpgrades()}
+      {state.currentTab === 'Upgrades' && renderUpgrades('Upgrades', ['signal', 'relays'])}
+      {state.currentTab === 'DP Upgrades' && renderUpgrades('DP Upgrades', ['dp'])}
       {state.currentTab === 'Findings' && renderFindings()}
       {state.currentTab === 'Prestige' && renderPrestige()}
       {state.currentTab === 'Stats' && (

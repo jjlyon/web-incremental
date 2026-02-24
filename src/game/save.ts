@@ -2,7 +2,7 @@ import { GENERATORS, MILESTONES, UPGRADES } from './data';
 import { GameState, TabName } from './types';
 
 const SAVE_KEY = 'signal-and-salvage-save-v1';
-const VALID_TABS: TabName[] = ['Control', 'Generators', 'Upgrades', 'Findings', 'Prestige', 'Stats'];
+const VALID_TABS: TabName[] = ['Control', 'Generators', 'Upgrades', 'DP Upgrades', 'Findings', 'Prestige', 'Stats'];
 const VALID_MILESTONES = new Set(MILESTONES.map((milestone) => milestone.id));
 
 const isObjectRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
@@ -32,6 +32,18 @@ const hasValidUpgrades = (value: Record<string, unknown>): boolean => {
   return UPGRADES.every((upgrade) => isNonNegativeInteger(upgrades[upgrade.id]));
 };
 
+const normalizeCountsRecord = (
+  source: unknown,
+  ids: readonly string[],
+): Record<string, unknown> | null => {
+  if (!isObjectRecord(source)) return null;
+
+  return ids.reduce<Record<string, unknown>>((acc, id) => {
+    acc[id] = isNonNegativeInteger(source[id]) ? source[id] : 0;
+    return acc;
+  }, {});
+};
+
 const hasValidBuyAmount = (value: Record<string, unknown>): boolean => value.buyAmount === 1 || value.buyAmount === 10 || value.buyAmount === 'max';
 
 const isValidGameState = (value: unknown): value is GameState => {
@@ -58,7 +70,20 @@ const isValidGameState = (value: unknown): value is GameState => {
 const parseGameState = (raw: string): GameState | null => {
   try {
     const parsed = JSON.parse(raw);
-    return isValidGameState(parsed) ? parsed : null;
+    if (!isObjectRecord(parsed)) return null;
+
+    const normalizedGenerators = normalizeCountsRecord(parsed.generators, GENERATORS.map((generator) => generator.id));
+    const normalizedUpgrades = normalizeCountsRecord(parsed.upgrades, UPGRADES.map((upgrade) => upgrade.id));
+
+    if (!normalizedGenerators || !normalizedUpgrades) return null;
+
+    const normalized = {
+      ...parsed,
+      generators: normalizedGenerators,
+      upgrades: normalizedUpgrades,
+    };
+
+    return isValidGameState(normalized) ? normalized : null;
   } catch {
     return null;
   }

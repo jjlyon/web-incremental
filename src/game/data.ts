@@ -56,8 +56,9 @@ export const UPGRADES: UpgradeDef[] = [
     prerequisites: (s) => s.upgrades.auto_scan_daemon_1 > 0,
   },
 
-  { id: 'cataloged_patterns', name: 'Cataloged Patterns', description: 'Repeatable: +8% global production.', cost: 4, currencyType: 'dp', repeatable: true },
-  { id: 'signal_mapping', name: 'Signal Mapping', description: 'Repeatable: +10% click power.', cost: 6, currencyType: 'dp', repeatable: true },
+  { id: 'cataloged_patterns', name: 'Cataloged Patterns', description: 'Repeatable: +8% global production.', cost: 4, currencyType: 'dp', repeatable: true, costGrowth: 1.12 },
+  { id: 'signal_mapping', name: 'Signal Mapping', description: 'Repeatable: +10% click power.', cost: 6, currencyType: 'dp', repeatable: true, costGrowth: 1.1 },
+  { id: 'passive_research', name: 'Passive Research Loop', description: 'Repeatable: +0.08 passive DP/sec.', cost: 7, currencyType: 'dp', repeatable: true, costGrowth: 1.14 },
   {
     id: 'probe_blueprints', name: 'Probe Blueprints', description: 'Deep-Space Probes cost 12% less.', cost: 20, currencyType: 'dp',
     prerequisites: (s) => s.generators.probe >= 1 || s.totalSignalEarned > 250_000,
@@ -69,14 +70,14 @@ export const UPGRADES: UpgradeDef[] = [
 ];
 
 export const MILESTONES: MilestoneDef[] = [
-  { id: 'm_first_scan', name: 'First Contact', description: 'Reach 100 total signal earned.', dpReward: 2, condition: (s) => s.totalSignalEarned >= 100 },
-  { id: 'm_first_gen', name: 'Basic Toolkit', description: 'Own 1 Handheld Scanner.', dpReward: 2, condition: (s) => s.generators.scanner >= 1 },
-  { id: 'm_first_dish', name: 'Dish Online', description: 'Own 1 Dish Array.', dpReward: 3, condition: (s) => s.generators.dish >= 1 },
-  { id: 'm_dish_field', name: 'Array Field', description: 'Own 25 Dish Arrays.', dpReward: 5, condition: (s) => s.generators.dish >= 25 },
-  { id: 'm_probe_launch', name: 'Probe Launch', description: 'Own 1 Deep-Space Probe.', dpReward: 6, condition: (s) => s.generators.probe >= 1 },
-  { id: 'm_supercomputer', name: 'Orbital Think Tank', description: 'Own 1 Orbital Supercomputer.', dpReward: 9, condition: (s) => s.generators.supercomputer >= 1 },
-  { id: 'm_big_signal', name: 'Signal Surge', description: 'Reach 1e8 total signal earned.', dpReward: 10, condition: (s) => s.totalSignalEarned >= 1e8 },
-  { id: 'm_noise_research', name: 'Noise Anthropology', description: 'Reach 30 noise.', dpReward: 5, condition: (s) => s.noise >= 30 },
-  { id: 'm_correlator_sync', name: 'Correlator Sync', description: 'Own 1 Quantum Correlator.', dpReward: 15, condition: (s) => s.generators.correlator >= 1 },
-  { id: 'm_deep_archive', name: 'Deep Archive', description: 'Reach 1e12 total signal earned.', dpReward: 25, condition: (s) => s.totalSignalEarned >= 1e12 },
+  { id: 'm_first_scan', name: 'First Contact', description: 'Reach 100 total signal earned.', dpReward: 3, condition: (s) => s.totalSignalEarned >= 100 },
+  { id: 'm_first_gen', name: 'Basic Toolkit', description: 'Own 1 Handheld Scanner.', dpReward: 3, condition: (s) => s.generators.scanner >= 1 },
+  { id: 'm_first_dish', name: 'Dish Online', description: 'Own 1 Dish Array.', dpReward: 4, condition: (s) => s.generators.dish >= 1 },
+  { id: 'm_dish_field', name: 'Array Field', description: 'Own 25 Dish Arrays.', dpReward: 7, condition: (s) => s.generators.dish >= 25 },
+  { id: 'm_probe_launch', name: 'Probe Launch', description: 'Own 1 Deep-Space Probe.', dpReward: 8, condition: (s) => s.generators.probe >= 1 },
+  { id: 'm_supercomputer', name: 'Orbital Think Tank', description: 'Own 1 Orbital Supercomputer.', dpReward: 11, condition: (s) => s.generators.supercomputer >= 1 },
+  { id: 'm_big_signal', name: 'Signal Surge', description: 'Reach 1e8 total signal earned.', dpReward: 13, condition: (s) => s.totalSignalEarned >= 1e8 },
+  { id: 'm_noise_research', name: 'Noise Anthropology', description: 'Reach 30 noise.', dpReward: 7, condition: (s) => s.noise >= 30 },
+  { id: 'm_correlator_sync', name: 'Correlator Sync', description: 'Own 1 Quantum Correlator.', dpReward: 18, condition: (s) => s.generators.correlator >= 1 },
+  { id: 'm_deep_archive', name: 'Deep Archive', description: 'Reach 1e12 total signal earned.', dpReward: 30, condition: (s) => s.totalSignalEarned >= 1e12 },
 ];
