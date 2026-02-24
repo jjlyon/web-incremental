@@ -113,7 +113,8 @@ function App() {
     const cost = getGeneratorCost(gen.id, owned, 0, state);
     return state.signal >= cost;
   });
-  const hasAffordableUpgrade = UPGRADES.some((up) => canPurchaseUpgrade(state, up.id));
+  const hasAffordableSignalOrRelayUpgrade = UPGRADES.some((up) => ['signal', 'relays'].includes(up.currencyType) && canPurchaseUpgrade(state, up.id));
+  const hasAffordableDpUpgrade = UPGRADES.some((up) => up.currencyType === 'dp' && canPurchaseUpgrade(state, up.id));
   const hasClaimableFinding = MILESTONES.some((m) => !state.milestonesClaimed.includes(m.id) && m.condition(state));
   const canPrestigeNow = canPrestige(state) && prestigeGain > 0;
 
@@ -256,8 +257,8 @@ function App() {
         {tabs.map((tab) => {
           const hasAttention =
             (tab === 'Generators' && hasAffordableGenerator) ||
-            (tab === 'Upgrades' && hasAffordableUpgrade) ||
-            (tab === 'DP Upgrades' && hasAffordableUpgrade) ||
+            (tab === 'Upgrades' && hasAffordableSignalOrRelayUpgrade) ||
+            (tab === 'DP Upgrades' && hasAffordableDpUpgrade) ||
             (tab === 'Findings' && hasClaimableFinding) ||
             (tab === 'Prestige' && canPrestigeNow);
           return <TabButton key={tab} tab={tab} active={state.currentTab === tab} hasAttention={hasAttention} onClick={(t) => dispatch({ type: 'SET_TAB', tab: t })} />;
