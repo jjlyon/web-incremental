@@ -110,9 +110,11 @@ function App() {
               <strong>{up.name}</strong> [{up.currencyType.toUpperCase()} {formatNumber(up.cost)}] {up.repeatable ? `(Lv ${level})` : purchased ? '(Owned)' : ''}
               <div className="muted">{up.description}</div>
             </div>
-            <button disabled={!canBuy} onClick={() => dispatch({ type: 'BUY_UPGRADE', upgradeId: up.id })}>
-              Buy
-            </button>
+            {!purchased && (
+              <button disabled={!canBuy} onClick={() => dispatch({ type: 'BUY_UPGRADE', upgradeId: up.id })}>
+                Buy
+              </button>
+            )}
           </div>
         );
       })}
