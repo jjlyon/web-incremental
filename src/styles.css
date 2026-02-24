@@ -1,0 +1,42 @@
+:root {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  color: #e7e7e7;
+  background: #101218;
+}
+
+body { margin: 0; }
+
+.app {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.panel {
+  border: 1px solid #384050;
+  background: #181d28;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.statsline {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem; }
+.tab, button {
+  background: #222a38;
+  border: 1px solid #4a576f;
+  color: #eaeaea;
+  padding: 0.3rem 0.5rem;
+  cursor: pointer;
+}
+.tab.active { background: #2f3b53; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.big { font-size: 1.1rem; padding: 0.7rem 1rem; margin-bottom: 0.5rem; }
+.row { display: flex; justify-content: space-between; gap: 1rem; align-items: center; border-top: 1px dashed #2e384b; padding: 0.5rem 0; }
+.actions { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+textarea { width: 100%; margin-top: 0.3rem; background: #0f131b; color: #d4d8df; border: 1px solid #48556e; }
+.muted { color: #a7b3c7; font-size: 0.9rem; }
