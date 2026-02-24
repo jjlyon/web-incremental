@@ -4,7 +4,7 @@ import { GENERATORS, MILESTONES, UPGRADES } from './game/data';
 import { canPrestige, canPurchaseUpgrade, formatNumber, getBuyMaxCount, getClickPower, getGeneratorCost, getPrestigeProjection, getTotalSps, runSanityChecks } from './game/economy';
 import { clearSave, exportSave, importSave, loadGame, saveGame } from './game/save';
 import { createInitialState, gameReducer, verifyPrestigeReset } from './game/state';
-import { TabName } from './game/types';
+import { GeneratorId, TabName } from './game/types';
 
 const tabs: TabName[] = ['Control', 'Generators', 'Upgrades', 'Findings', 'Prestige', 'Stats'];
 
@@ -48,6 +48,24 @@ function App() {
   const clickPower = useMemo(() => getClickPower(state), [state]);
   const prestigeGain = getPrestigeProjection(state.totalSignalEarned);
   const unlockedBuyMax = state.upgrades.unlock_buy_max > 0;
+  const hasAffordableGenerator = GENERATORS.some((gen) => {
+    const owned = state.generators[gen.id];
+    const cost = getGeneratorCost(gen.id, owned, 0, state);
+    return state.signal >= cost;
+  });
+  const hasAffordableUpgrade = UPGRADES.some((up) => canPurchaseUpgrade(state, up.id));
+  const hasClaimableFinding = MILESTONES.some((m) => !state.milestonesClaimed.includes(m.id) && m.condition(state));
+  const canPrestigeNow = canPrestige(state) && prestigeGain > 0;
+
+  const canAffordGeneratorAmount = (generatorId: GeneratorId, amount: number): boolean => {
+    const owned = state.generators[generatorId];
+    let totalCost = 0;
+    for (let offset = 0; offset < amount; offset += 1) {
+      totalCost += getGeneratorCost(generatorId, owned, offset, state);
+      if (totalCost > state.signal) return false;
+    }
+    return true;
+  };
 
   const renderGenerators = () => (
     <div className="panel">
@@ -63,11 +81,11 @@ function App() {
               <strong>{gen.name}</strong> — Owned: {owned} | Cost: {formatNumber(cost)} | Base contrib: {formatNumber(contribution)}/s
             </div>
             <div className="actions">
-              <button onClick={() => dispatch({ type: 'BUY_GENERATOR', generatorId: gen.id, amount: 1 })}>Buy 1</button>
+              <button disabled={state.signal < cost} onClick={() => dispatch({ type: 'BUY_GENERATOR', generatorId: gen.id, amount: 1 })}>Buy 1</button>
               {unlockedBuyMax && (
                 <>
-                  <button onClick={() => dispatch({ type: 'BUY_GENERATOR', generatorId: gen.id, amount: 10 })}>Buy 10</button>
-                  <button onClick={() => dispatch({ type: 'BUY_GENERATOR', generatorId: gen.id, amount: 'max' })}>Buy Max ({maxCount})</button>
+                  <button disabled={!canAffordGeneratorAmount(gen.id, 10)} onClick={() => dispatch({ type: 'BUY_GENERATOR', generatorId: gen.id, amount: 10 })}>Buy 10</button>
+                  <button disabled={maxCount <= 0} onClick={() => dispatch({ type: 'BUY_GENERATOR', generatorId: gen.id, amount: 'max' })}>Buy Max ({maxCount})</button>
                 </>
               )}
             </div>
@@ -130,7 +148,7 @@ function App() {
       <h3>Relay Uplink (Prestige)</h3>
       <p>Unlock condition: claim Correlator Sync finding OR reach 1e12 total signal.</p>
       <p>Projected relays on reset: <strong>{prestigeGain}</strong></p>
-      <button disabled={!canPrestige(state) || prestigeGain <= 0} onClick={() => dispatch({ type: 'PRESTIGE' })}>Initiate Relay Reset</button>
+      <button disabled={!canPrestigeNow} onClick={() => dispatch({ type: 'PRESTIGE' })}>Initiate Relay Reset</button>
     </div>
   );
 
@@ -169,7 +187,16 @@ function App() {
         <div>Relays: {formatNumber(state.relays)}</div>
       </div>
 
-      <div className="tabs">{tabs.map((tab) => <TabButton key={tab} tab={tab} active={state.currentTab === tab} onClick={(t) => dispatch({ type: 'SET_TAB', tab: t })} />)}</div>
+      <div className="tabs">
+        {tabs.map((tab) => {
+          const hasAttention =
+            (tab === 'Generators' && hasAffordableGenerator) ||
+            (tab === 'Upgrades' && hasAffordableUpgrade) ||
+            (tab === 'Findings' && hasClaimableFinding) ||
+            (tab === 'Prestige' && canPrestigeNow);
+          return <TabButton key={tab} tab={tab} active={state.currentTab === tab} hasAttention={hasAttention} onClick={(t) => dispatch({ type: 'SET_TAB', tab: t })} />;
+        })}
+      </div>
 
       {state.currentTab === 'Control' && (
         <div className="panel">
