@@ -7,6 +7,8 @@ import { createInitialState, gameReducer, verifyPrestigeReset } from './game/sta
 import { GeneratorId, TabName } from './game/types';
 
 const tabs: TabName[] = ['Control', 'Generators', 'Upgrades', 'Findings', 'Prestige', 'Stats'];
+const OFFLINE_TICK_CHUNK_SECONDS = 1;
+const MAX_OFFLINE_SECONDS = 60 * 60;
 
 function App() {
   const [state, dispatch] = useReducer(gameReducer, undefined, createInitialState);
@@ -14,10 +16,67 @@ function App() {
   const [exportText, setExportText] = useState('');
   const lastTickRef = useRef(performance.now());
   const stateRef = useRef(state);
+  const inactiveSinceRef = useRef<number | null>(null);
+
+  const applyOfflineTicks = (elapsedMs: number) => {
+    const cappedSeconds = Math.min(MAX_OFFLINE_SECONDS, Math.max(0, elapsedMs / 1000));
+    if (cappedSeconds <= 0) return;
+
+    const wholeChunks = Math.floor(cappedSeconds / OFFLINE_TICK_CHUNK_SECONDS);
+    const remainder = cappedSeconds - wholeChunks * OFFLINE_TICK_CHUNK_SECONDS;
+
+    for (let i = 0; i < wholeChunks; i += 1) {
+      dispatch({ type: 'TICK', dt: OFFLINE_TICK_CHUNK_SECONDS });
+    }
+    if (remainder > 0) dispatch({ type: 'TICK', dt: remainder });
+  };
 
   useEffect(() => {
     const loaded = loadGame();
-    if (loaded) dispatch({ type: 'LOAD_STATE', payload: loaded });
+    if (!loaded) return;
+
+    const now = Date.now();
+    dispatch({ type: 'LOAD_STATE', payload: loaded });
+    applyOfflineTicks(now - loaded.lastSaveAt);
+    dispatch({ type: 'UPDATE_SAVE_TIME', now });
+    inactiveSinceRef.current = null;
+    lastTickRef.current = performance.now();
+  }, []);
+
+  useEffect(() => {
+    const resumeFromOffline = () => {
+      const inactiveSince = inactiveSinceRef.current;
+      if (inactiveSince === null) return;
+
+      const now = Date.now();
+      applyOfflineTicks(now - inactiveSince);
+      dispatch({ type: 'UPDATE_SAVE_TIME', now });
+      inactiveSinceRef.current = null;
+      lastTickRef.current = performance.now();
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden' && inactiveSinceRef.current === null) {
+        inactiveSinceRef.current = Date.now();
+        return;
+      }
+      if (document.visibilityState === 'visible') resumeFromOffline();
+    };
+
+    const onBlur = () => {
+      if (inactiveSinceRef.current !== null) return;
+      inactiveSinceRef.current = Date.now();
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('focus', resumeFromOffline);
+    window.addEventListener('blur', onBlur);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('focus', resumeFromOffline);
+      window.removeEventListener('blur', onBlur);
+    };
   }, []);
 
   useEffect(() => {
