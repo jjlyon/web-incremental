@@ -1,8 +1,9 @@
-import { GENERATORS, UPGRADES } from './data';
+import { GENERATORS, MILESTONES, UPGRADES } from './data';
 import { GameState, TabName } from './types';
 
 const SAVE_KEY = 'signal-and-salvage-save-v1';
 const VALID_TABS: TabName[] = ['Control', 'Generators', 'Upgrades', 'Findings', 'Prestige', 'Stats'];
+const VALID_MILESTONES = new Set(MILESTONES.map((milestone) => milestone.id));
 
 const isObjectRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 
@@ -10,20 +11,25 @@ const hasNumber = (value: Record<string, unknown>, key: string): boolean => type
 
 const hasBoolean = (value: Record<string, unknown>, key: string): boolean => typeof value[key] === 'boolean';
 
-const hasStringArray = (value: Record<string, unknown>, key: string): boolean => Array.isArray(value[key]) && (value[key] as unknown[]).every((entry) => typeof entry === 'string');
+const isNonNegativeInteger = (entry: unknown): boolean => typeof entry === 'number' && Number.isInteger(entry) && entry >= 0;
+
+const hasValidMilestones = (value: Record<string, unknown>, key: string): boolean => (
+  Array.isArray(value[key])
+  && (value[key] as unknown[]).every((entry) => typeof entry === 'string' && VALID_MILESTONES.has(entry))
+);
 
 const hasValidTab = (value: Record<string, unknown>, key: string): boolean => typeof value[key] === 'string' && VALID_TABS.includes(value[key] as TabName);
 
 const hasValidGenerators = (value: Record<string, unknown>): boolean => {
   if (!isObjectRecord(value.generators)) return false;
   const generators = value.generators;
-  return GENERATORS.every((generator) => typeof generators[generator.id] === 'number' && Number.isFinite(generators[generator.id] as number));
+  return GENERATORS.every((generator) => isNonNegativeInteger(generators[generator.id]));
 };
 
 const hasValidUpgrades = (value: Record<string, unknown>): boolean => {
   if (!isObjectRecord(value.upgrades)) return false;
   const upgrades = value.upgrades;
-  return UPGRADES.every((upgrade) => typeof upgrades[upgrade.id] === 'number' && Number.isFinite(upgrades[upgrade.id] as number));
+  return UPGRADES.every((upgrade) => isNonNegativeInteger(upgrades[upgrade.id]));
 };
 
 const hasValidBuyAmount = (value: Record<string, unknown>): boolean => value.buyAmount === 1 || value.buyAmount === 10 || value.buyAmount === 'max';
@@ -39,7 +45,7 @@ const isValidGameState = (value: unknown): value is GameState => {
     && hasNumber(value, 'relays')
     && hasValidGenerators(value)
     && hasValidUpgrades(value)
-    && hasStringArray(value, 'milestonesClaimed')
+    && hasValidMilestones(value, 'milestonesClaimed')
     && hasValidTab(value, 'currentTab')
     && hasBoolean(value, 'autoClaimFindings')
     && hasBoolean(value, 'autoBuyEnabled')
