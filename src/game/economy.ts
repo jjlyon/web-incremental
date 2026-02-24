@@ -137,7 +137,7 @@ export const getPrestigeProjection = (totalSignalEarned: number): number => {
 };
 
 export const canPrestige = (state: GameState): boolean =>
-  state.milestonesClaimed.includes('m_correlator_sync') || state.totalSignalEarned >= 1e12;
+  state.generators.correlator >= 1 || state.totalSignalEarned >= 1e12;
 
 export const runSanityChecks = (state: GameState): string[] => {
   const issues: string[] = [];
