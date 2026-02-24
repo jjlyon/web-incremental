@@ -136,6 +136,12 @@ export const getPrestigeProjection = (totalSignalEarned: number): number => {
   return Math.max(0, Math.floor(Math.log10(totalSignalEarned / 1e8) * 8 + Math.sqrt(totalSignalEarned / 1e10)));
 };
 
+export const getPrestigeGain = (state: GameState): number => {
+  const projected = getPrestigeProjection(state.totalSignalEarned);
+  if (projected > 0) return projected;
+  return state.generators.correlator >= 1 ? 1 : 0;
+};
+
 export const canPrestige = (state: GameState): boolean =>
   state.generators.correlator >= 1 || state.totalSignalEarned >= 1e12;
 
