@@ -16,6 +16,7 @@ function App() {
   const [exportText, setExportText] = useState('');
   const lastTickRef = useRef(performance.now());
   const stateRef = useRef(state);
+  const inactiveSinceRef = useRef<number | null>(null);
 
   const applyOfflineTicks = (elapsedMs: number) => {
     const cappedSeconds = Math.min(MAX_OFFLINE_SECONDS, Math.max(0, elapsedMs / 1000));
@@ -34,30 +35,47 @@ function App() {
     const loaded = loadGame();
     if (!loaded) return;
 
+    const now = Date.now();
     dispatch({ type: 'LOAD_STATE', payload: loaded });
-    applyOfflineTicks(Date.now() - loaded.lastSaveAt);
-    dispatch({ type: 'UPDATE_SAVE_TIME', now: Date.now() });
+    applyOfflineTicks(now - loaded.lastSaveAt);
+    dispatch({ type: 'UPDATE_SAVE_TIME', now });
+    inactiveSinceRef.current = null;
     lastTickRef.current = performance.now();
   }, []);
 
   useEffect(() => {
     const resumeFromOffline = () => {
+      const inactiveSince = inactiveSinceRef.current;
+      if (inactiveSince === null) return;
+
       const now = Date.now();
-      applyOfflineTicks(now - stateRef.current.lastSaveAt);
+      applyOfflineTicks(now - inactiveSince);
       dispatch({ type: 'UPDATE_SAVE_TIME', now });
+      inactiveSinceRef.current = null;
       lastTickRef.current = performance.now();
     };
 
     const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden' && inactiveSinceRef.current === null) {
+        inactiveSinceRef.current = Date.now();
+        return;
+      }
       if (document.visibilityState === 'visible') resumeFromOffline();
+    };
+
+    const onBlur = () => {
+      if (inactiveSinceRef.current !== null) return;
+      inactiveSinceRef.current = Date.now();
     };
 
     document.addEventListener('visibilitychange', onVisibilityChange);
     window.addEventListener('focus', resumeFromOffline);
+    window.addEventListener('blur', onBlur);
 
     return () => {
       document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('focus', resumeFromOffline);
+      window.removeEventListener('blur', onBlur);
     };
   }, []);
 
