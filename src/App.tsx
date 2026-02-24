@@ -13,6 +13,7 @@ function App() {
   const [importText, setImportText] = useState('');
   const [exportText, setExportText] = useState('');
   const lastTickRef = useRef(performance.now());
+  const stateRef = useRef(state);
 
   useEffect(() => {
     const loaded = loadGame();
@@ -32,12 +33,16 @@ function App() {
   }, []);
 
   useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
     const id = setInterval(() => {
-      saveGame(state);
+      saveGame(stateRef.current);
       dispatch({ type: 'UPDATE_SAVE_TIME', now: Date.now() });
     }, 8000);
     return () => clearInterval(id);
-  }, [state]);
+  }, []);
 
   const sps = useMemo(() => getTotalSps(state), [state]);
   const clickPower = useMemo(() => getClickPower(state), [state]);
