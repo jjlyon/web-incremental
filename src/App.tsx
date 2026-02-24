@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { TabButton } from './components/TabButton';
 import { GENERATORS, MILESTONES, UPGRADES } from './game/data';
-import { canPrestige, canPurchaseUpgrade, formatNumber, getBuyMaxCount, getClickPower, getGeneratorCost, getPassiveDpPerSecond, getPrestigeProjection, getTotalSps, getUpgradeCost, runSanityChecks } from './game/economy';
+import { canPrestige, canPurchaseUpgrade, formatNumber, getBuyMaxCount, getClickPower, getGeneratorCost, getPassiveDpPerSecond, getPrestigeGain, getTotalSps, getUpgradeCost, runSanityChecks } from './game/economy';
 import { clearSave, exportSave, importSave, loadGame, saveGame } from './game/save';
 import { createInitialState, gameReducer, verifyPrestigeReset } from './game/state';
 import { GeneratorId, TabName } from './game/types';
@@ -105,7 +105,7 @@ function App() {
 
   const sps = useMemo(() => getTotalSps(state), [state]);
   const clickPower = useMemo(() => getClickPower(state), [state]);
-  const prestigeGain = getPrestigeProjection(state.totalSignalEarned);
+  const prestigeGain = getPrestigeGain(state);
   const passiveDpPerSecond = getPassiveDpPerSecond(state);
   const unlockedBuyMax = state.upgrades.unlock_buy_max > 0;
   const hasAffordableGenerator = GENERATORS.some((gen) => {

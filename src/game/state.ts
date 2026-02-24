@@ -1,5 +1,5 @@
 import { MILESTONES, UPGRADES } from './data';
-import { canPrestige, canPurchaseUpgrade, computeNoise, getAutoScanRate, getBuyMaxCount, getClickPower, getGeneratorCost, getPassiveDpPerSecond, getPrestigeProjection, getTotalSps, getUpgradeCost } from './economy';
+import { canPrestige, canPurchaseUpgrade, computeNoise, getAutoScanRate, getBuyMaxCount, getClickPower, getGeneratorCost, getPassiveDpPerSecond, getPrestigeGain, getTotalSps, getUpgradeCost } from './economy';
 import { Action, GameState, GeneratorId, UpgradeId } from './types';
 
 const emptyGenerators = {
@@ -110,7 +110,7 @@ const maybeAutoClaim = (state: GameState): GameState => {
 };
 
 const applyPrestigeReset = (state: GameState): GameState => {
-  const gained = getPrestigeProjection(state.totalSignalEarned);
+  const gained = getPrestigeGain(state);
   if (gained <= 0 || !canPrestige(state)) return state;
 
   const keepAutomation = state.upgrades.persistent_scripts > 0;
@@ -185,7 +185,7 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
 };
 
 export const verifyPrestigeReset = (state: GameState): boolean => {
-  const projected = getPrestigeProjection(state.totalSignalEarned);
+  const projected = getPrestigeGain(state);
   if (projected <= 0) return true;
   const reset = applyPrestigeReset(state);
   return reset.signal >= 0 && reset.generators.correlator === 0 && reset.relays >= state.relays;
