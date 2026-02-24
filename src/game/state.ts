@@ -1,5 +1,5 @@
 import { MILESTONES, UPGRADES } from './data';
-import { canPrestige, canPurchaseUpgrade, computeNoise, getAutoScanRate, getBuyMaxCount, getClickPower, getGeneratorCost, getPrestigeProjection, getTotalSps } from './economy';
+import { canPrestige, canPurchaseUpgrade, computeNoise, getAutoScanRate, getBuyMaxCount, getClickPower, getGeneratorCost, getPassiveDpPerSecond, getPrestigeProjection, getTotalSps, getUpgradeCost } from './economy';
 import { Action, GameState, GeneratorId, UpgradeId } from './types';
 
 const emptyGenerators = {
@@ -30,6 +30,7 @@ const emptyUpgrades = {
   auto_scan_daemon_2: 0,
   cataloged_patterns: 0,
   signal_mapping: 0,
+  passive_research: 0,
   probe_blueprints: 0,
   relay_amplification: 0,
   persistent_scripts: 0,
@@ -137,6 +138,7 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
     case 'TICK': {
       const dt = Math.max(0, Math.min(1, action.dt));
       let next = addSignal(state, getTotalSps(state) * dt + getClickPower(state) * getAutoScanRate(state) * dt);
+      next = { ...next, dp: next.dp + getPassiveDpPerSecond(next) * dt };
       if (state.autoBuyEnabled && state.upgrades.unlock_buy_max > 0) {
         for (const gen of ['scanner', 'dish', 'sifter', 'probe', 'supercomputer', 'correlator'] as GeneratorId[]) {
           next = buyGenerator(next, gen, 'max');
@@ -152,7 +154,8 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
     case 'BUY_UPGRADE': {
       const up = UPGRADES.find((u) => u.id === action.upgradeId);
       if (!up || !canPurchaseUpgrade(state, action.upgradeId)) return state;
-      const spent = spend(state, up.cost, up.currencyType);
+      const upgradeCost = getUpgradeCost(state, action.upgradeId);
+      const spent = spend(state, upgradeCost, up.currencyType);
       return sanitize({ ...spent, upgrades: { ...spent.upgrades, [action.upgradeId]: spent.upgrades[action.upgradeId] + 1 } });
     }
     case 'CLAIM_MILESTONE': {

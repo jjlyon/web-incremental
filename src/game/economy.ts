@@ -106,15 +106,29 @@ export const computeNoise = (state: GameState): number => {
   return Math.sqrt(totalGens) * 4;
 };
 
+
+export const getUpgradeCost = (state: GameState, upgradeId: UpgradeId): number => {
+  const up = UPGRADES.find((candidate) => candidate.id === upgradeId);
+  if (!up) return Number.POSITIVE_INFINITY;
+  if (!up.repeatable) return up.cost;
+  const level = state.upgrades[upgradeId];
+  const growth = up.costGrowth ?? 1;
+  return up.cost * Math.pow(growth, level);
+};
+
+export const getPassiveDpPerSecond = (state: GameState): number =>
+  state.upgrades.passive_research * 0.08;
+
 export const canPurchaseUpgrade = (state: GameState, upgradeId: UpgradeId): boolean => {
   const up = UPGRADES.find((u) => u.id === upgradeId);
   if (!up) return false;
   if (up.maxLevel && state.upgrades[upgradeId] >= up.maxLevel) return false;
   if (!up.repeatable && state.upgrades[upgradeId] > 0) return false;
   if (up.prerequisites && !up.prerequisites(state)) return false;
-  if (up.currencyType === 'signal') return state.signal >= up.cost;
-  if (up.currencyType === 'dp') return state.dp >= up.cost;
-  return state.relays >= up.cost;
+  const cost = getUpgradeCost(state, upgradeId);
+  if (up.currencyType === 'signal') return state.signal >= cost;
+  if (up.currencyType === 'dp') return state.dp >= cost;
+  return state.relays >= cost;
 };
 
 export const getPrestigeProjection = (totalSignalEarned: number): number => {
