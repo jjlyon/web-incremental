@@ -6,7 +6,7 @@ import { clearSave, exportSave, importSave, loadGame, saveGame } from './game/sa
 import { createInitialState, gameReducer, verifyPrestigeReset } from './game/state';
 import { GeneratorId, TabName } from './game/types';
 
-const tabs: TabName[] = ['Control', 'Generators', 'Upgrades', 'Findings', 'Prestige', 'Stats'];
+const tabs: TabName[] = ['Control', 'Generators', 'Upgrades', 'DP Upgrades', 'Findings', 'Prestige', 'Stats'];
 const OFFLINE_TICK_CHUNK_SECONDS = 1;
 const MAX_OFFLINE_SECONDS = 60 * 60;
 
@@ -155,10 +155,10 @@ function App() {
     </div>
   );
 
-  const renderUpgrades = () => (
+  const renderUpgrades = (title: string, currencies: Array<'signal' | 'dp' | 'relays'>) => (
     <div className="panel">
-      <h3>Upgrades</h3>
-      {UPGRADES.map((up) => {
+      <h3>{title}</h3>
+      {UPGRADES.filter((up) => currencies.includes(up.currencyType)).map((up) => {
         const level = state.upgrades[up.id];
         const purchased = !up.repeatable && level > 0;
         const canBuy = canPurchaseUpgrade(state, up.id);
@@ -257,6 +257,7 @@ function App() {
           const hasAttention =
             (tab === 'Generators' && hasAffordableGenerator) ||
             (tab === 'Upgrades' && hasAffordableUpgrade) ||
+            (tab === 'DP Upgrades' && hasAffordableUpgrade) ||
             (tab === 'Findings' && hasClaimableFinding) ||
             (tab === 'Prestige' && canPrestigeNow);
           return <TabButton key={tab} tab={tab} active={state.currentTab === tab} hasAttention={hasAttention} onClick={(t) => dispatch({ type: 'SET_TAB', tab: t })} />;
@@ -283,7 +284,8 @@ function App() {
       )}
 
       {state.currentTab === 'Generators' && renderGenerators()}
-      {state.currentTab === 'Upgrades' && renderUpgrades()}
+      {state.currentTab === 'Upgrades' && renderUpgrades('Upgrades', ['signal', 'relays'])}
+      {state.currentTab === 'DP Upgrades' && renderUpgrades('DP Upgrades', ['dp'])}
       {state.currentTab === 'Findings' && renderFindings()}
       {state.currentTab === 'Prestige' && renderPrestige()}
       {state.currentTab === 'Stats' && (

@@ -82,6 +82,7 @@ export type TabName =
   | 'Control'
   | 'Generators'
   | 'Upgrades'
+  | 'DP Upgrades'
   | 'Findings'
   | 'Prestige'
   | 'Stats';

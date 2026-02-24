@@ -2,7 +2,7 @@ import { GENERATORS, MILESTONES, UPGRADES } from './data';
 import { GameState, TabName } from './types';
 
 const SAVE_KEY = 'signal-and-salvage-save-v1';
-const VALID_TABS: TabName[] = ['Control', 'Generators', 'Upgrades', 'Findings', 'Prestige', 'Stats'];
+const VALID_TABS: TabName[] = ['Control', 'Generators', 'Upgrades', 'DP Upgrades', 'Findings', 'Prestige', 'Stats'];
 const VALID_MILESTONES = new Set(MILESTONES.map((milestone) => milestone.id));
 
 const isObjectRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
