@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { CSSProperties, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { TabButton } from './components/TabButton';
 import { GENERATORS, MILESTONES, UPGRADES } from './game/data';
 import { canPrestige, canPurchaseUpgrade, formatNumber, getBuyMaxCount, getClickPower, getGeneratorCost, getPassiveDpPerSecond, getPrestigeGain, getTotalSps, getUpgradeCost, runSanityChecks } from './game/economy';
@@ -9,13 +9,31 @@ import { GeneratorId, TabName } from './game/types';
 const tabs: TabName[] = ['Control', 'Generators', 'Upgrades', 'DP Upgrades', 'Findings', 'Prestige', 'Stats'];
 const OFFLINE_TICK_CHUNK_SECONDS = 1;
 const MAX_OFFLINE_SECONDS = 60 * 60;
+const WAVE_WIDTH = 1040;
+const WAVE_HEIGHT = 150;
+const WAVE_SAMPLE_STEP = 4;
+const WAVE_SPEED = 1.8;
+const WAVE_FREQUENCIES = [0.45, 0.9, 1.8, 3, 4.8, 7.2];
+const WAVE_COLORS = ['#67f3a1', '#6ad5ff', '#9b8cff', '#c5ff6a', '#ffba6a', '#ff6a9f'];
+const CLICK_MARKER_LIFETIME_SECONDS = 4.8;
+const CLICK_MARKER_SCROLL_PIXELS_PER_SECOND = 210;
+
+const generatorWaveOrder: GeneratorId[] = ['scanner', 'dish', 'sifter', 'probe', 'supercomputer', 'correlator'];
+
+type ClickMarker = {
+  id: number;
+  createdAt: number;
+  amplitude: number;
+};
 
 function App() {
   const [state, dispatch] = useReducer(gameReducer, undefined, createInitialState);
   const [importText, setImportText] = useState('');
   const [exportText, setExportText] = useState('');
+  const [clickMarkers, setClickMarkers] = useState<ClickMarker[]>([]);
   const lastTickRef = useRef(performance.now());
   const stateRef = useRef(state);
+  const clickMarkerIdRef = useRef(0);
   const inactiveSinceRef = useRef<number | null>(null);
 
   const applyOfflineTicks = (elapsedMs: number) => {
@@ -100,6 +118,14 @@ function App() {
       saveGame(stateRef.current);
       dispatch({ type: 'UPDATE_SAVE_TIME', now: Date.now() });
     }, 8000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      const now = performance.now() / 1000;
+      setClickMarkers((markers) => markers.filter((marker) => now - marker.createdAt < CLICK_MARKER_LIFETIME_SECONDS));
+    }, 400);
     return () => clearInterval(id);
   }, []);
 
@@ -223,6 +249,20 @@ function App() {
     </div>
   );
 
+  const handleManualScan = () => {
+    const now = performance.now() / 1000;
+    const clickAmplitude = Math.min(WAVE_HEIGHT * 0.42, 4 + Math.log10(clickPower + 1) * 7);
+    setClickMarkers((markers) => [
+      ...markers,
+      {
+        id: clickMarkerIdRef.current++,
+        createdAt: now,
+        amplitude: clickAmplitude,
+      },
+    ]);
+    dispatch({ type: 'MANUAL_SCAN' });
+  };
+
   const runManualSave = () => {
     saveGame(state);
     dispatch({ type: 'UPDATE_SAVE_TIME', now: Date.now() });
@@ -245,6 +285,42 @@ function App() {
   };
 
   const sanityIssues = runSanityChecks(state);
+  const waveTime = performance.now() / 1000;
+  const rawAmplitudes = generatorWaveOrder.map((generatorId) => state.generators[generatorId] * 0.6);
+  const largestAmplitude = Math.max(1, ...rawAmplitudes);
+  const amplitudeNormalizer = Math.max(1, largestAmplitude / 26);
+  const generatorWaveData = generatorWaveOrder.map((generatorId, index) => {
+    const amplitude = rawAmplitudes[index] / amplitudeNormalizer;
+    const generatorName = GENERATORS.find((generator) => generator.id === generatorId)?.name ?? generatorId;
+    let path = '';
+    for (let x = 0; x <= WAVE_WIDTH; x += WAVE_SAMPLE_STEP) {
+      const xRatio = x / WAVE_WIDTH;
+      const radians = xRatio * WAVE_FREQUENCIES[index] * Math.PI * 2 + waveTime * WAVE_SPEED;
+      const y = WAVE_HEIGHT / 2 + Math.sin(radians) * amplitude;
+      path += `${x === 0 ? 'M' : 'L'}${x},${y.toFixed(2)} `;
+    }
+    return {
+      generatorId,
+      generatorName,
+      color: WAVE_COLORS[index],
+      owned: state.generators[generatorId],
+      path: path.trim(),
+      isUnlocked: state.generators[generatorId] > 0,
+    };
+  });
+  const visibleGeneratorWaves = generatorWaveData.filter((wave) => wave.isUnlocked);
+  const scannerFrequency = WAVE_FREQUENCIES[0];
+  const visibleClickMarkers = clickMarkers
+    .map((marker) => {
+      const markerAge = waveTime - marker.createdAt;
+      const x = WAVE_WIDTH - markerAge * CLICK_MARKER_SCROLL_PIXELS_PER_SECOND;
+      if (x < -8 || x > WAVE_WIDTH + 8 || markerAge < 0) return null;
+      const xRatio = x / WAVE_WIDTH;
+      const radians = xRatio * scannerFrequency * Math.PI * 2 + waveTime * WAVE_SPEED;
+      const y = WAVE_HEIGHT / 2 + Math.sin(radians) * marker.amplitude;
+      return { id: marker.id, x, y };
+    })
+    .filter((marker): marker is { id: number; x: number; y: number } => marker !== null);
 
   return (
     <div className="app">
@@ -257,6 +333,34 @@ function App() {
         <div>DP: {formatNumber(state.dp)}</div>
         <div>Relays: {formatNumber(state.relays)}</div>
         <div>Passive DP/s: {formatNumber(passiveDpPerSecond)}</div>
+      </div>
+
+      <div className="panel wave-panel">
+        <div className="wave-header">
+          <strong>Signal Oscilloscope</strong>
+          <span className="muted">Unlocked generators render individual sinewaves; prestige-locked tiers stay hidden until repurchased.</span>
+        </div>
+        <svg viewBox={`0 0 ${WAVE_WIDTH} ${WAVE_HEIGHT}`} className="wave-display" role="img" aria-label="Live generator sinewaves">
+          <path d={`M0,${WAVE_HEIGHT / 2} H${WAVE_WIDTH}`} className="wave-baseline" />
+          {visibleGeneratorWaves.map((wave) => (
+            <path
+              key={wave.generatorId}
+              d={wave.path}
+              className="wave-line"
+              style={{ stroke: wave.color, opacity: 0.95 }}
+            />
+          ))}
+          {visibleClickMarkers.map((marker) => (
+            <circle key={`click-${marker.id}`} cx={marker.x.toFixed(2)} cy={marker.y.toFixed(2)} r={2.8} className="wave-click-marker" />
+          ))}
+        </svg>
+        <div className="wave-legend">
+          {visibleGeneratorWaves.length > 0 ? visibleGeneratorWaves.map((wave) => (
+            <span key={`${wave.generatorId}-legend`} className="wave-legend-item" style={{ '--wave-color': wave.color } as CSSProperties}>
+              {wave.generatorName}: {wave.owned}
+            </span>
+          )) : <span className="muted">No unlocked generators yet.</span>}
+        </div>
       </div>
 
       <div className="tabs">
@@ -274,7 +378,7 @@ function App() {
       {state.currentTab === 'Control' && (
         <div className="panel">
           <h3>Control Console</h3>
-          <button className="big" onClick={() => dispatch({ type: 'MANUAL_SCAN' })}>Manual Scan +{formatNumber(clickPower)} Signal</button>
+          <button className="big" onClick={handleManualScan}>Manual Scan +{formatNumber(clickPower)} Signal</button>
           <p className="muted">Use scans to bootstrap, then lean on passive production. Noise rises with infrastructure and dampens output.</p>
           <label>
             <input type="checkbox" checked={state.autoBuyEnabled} onChange={() => dispatch({ type: 'TOGGLE_AUTO_BUY' })} disabled={!unlockedBuyMax} /> Auto-Buy Generators (requires Batch Procurement)
