@@ -15,6 +15,7 @@ import {
   getGeneratorCost,
   getPassiveDpPerSecond,
   getPrestigeGain,
+  getRelayEnergyPerRelay,
   getRelayUpgradeCost,
   getTotalSps,
   getUpgradeCost,
@@ -126,6 +127,8 @@ function App() {
   const beaconGain = getBeaconProjection(state);
   const canPrestigeNow = canPrestige(state) && relayGain > 0;
   const canBeaconNow = canBeaconReset(state) && beaconGain > 0;
+  const relayEnergyPerRelay = getRelayEnergyPerRelay(state);
+  const relayBaseContribution = state.relays * 2.5 * (1 + state.relayUpgrades.relay_efficiency * 0.05);
 
   const hasAffordableGenerator = GENERATORS.some((gen) => state.signal >= getGeneratorCost(gen.id, state.generators[gen.id], 0, state));
   const hasAffordableSignalUpgrade = UPGRADES.some((up) => up.currencyType === 'signal' && canPurchaseUpgrade(state, up.id));
@@ -191,18 +194,21 @@ function App() {
       <div className="panel">
         <h3>Relay Uplink</h3>
         <p className="muted">Keeps: DP, Relays, Relay Energy, Relay Protocols, Relay Upgrades. Resets: signal, generators, signal upgrades.</p>
-        <p>Projection if reset now: <strong>+{formatNumber(relayGain)} Relays</strong> and <strong>+{formatNumber(relayGain + state.beaconUpgrades.network_memory)} Relay Energy</strong>.</p>
+        <p>Projection if reset now: <strong>+{formatNumber(relayGain)} Relays</strong> and <strong>+{formatNumber(relayGain * relayEnergyPerRelay)} Relay Energy</strong>.</p>
+        <p className="muted">Current relay contribution: +{formatNumber(relayBaseContribution)}% global production.</p>
+        <p className="muted">Relay Energy per new Relay: {formatNumber(relayEnergyPerRelay)}.</p>
         <button disabled={!canPrestigeNow} onClick={() => dispatch({ type: 'PRESTIGE' })}>Initiate Relay Reset</button>
       </div>
 
       <div className="panel">
         <h3>Signal Protocols</h3>
-        <p className="meta-subtitle">Relay Energy: {formatNumber(state.relayEnergy)}</p>
+        <p className="meta-subtitle">Relays: {formatNumber(state.relays)} (Protocols cost Relays)</p>
         {RELAY_PROTOCOLS.map((protocol) => (
           <div className="row" key={protocol.id}>
             <div>
-              <strong>{protocol.name}</strong> [ENERGY {protocol.cost}] {state.relayProtocols[protocol.id] > 0 ? '(Installed)' : ''}
+              <strong>{protocol.name}</strong> [RELAYS {protocol.cost}] {state.relayProtocols[protocol.id] > 0 ? '(Installed)' : ''}
               <div className="muted">{protocol.description}</div>
+              <div className="muted">{protocol.id === 'accelerated_sampling' ? 'Current: +15% click power.' : protocol.id === 'relay_synchronization' ? 'Current: +5% generator production.' : protocol.id === 'boot_sequence_cache' ? 'Current: +1 starting scanner.' : protocol.id === 'preloaded_coordinates' ? 'Current: +200 starting signal.' : 'Current: Automation upgrades persist on Relay reset.'}</div>
             </div>
             {state.relayProtocols[protocol.id] === 0 && <button disabled={!canPurchaseRelayProtocol(state, protocol.id)} onClick={() => dispatch({ type: 'BUY_RELAY_PROTOCOL', protocolId: protocol.id })}>Install</button>}
           </div>
@@ -211,7 +217,7 @@ function App() {
 
       <div className="panel meta-panel-full">
         <h3>Relay Upgrades</h3>
-        <p className="meta-subtitle">Relays: {formatNumber(state.relays)} | Total Earned: {formatNumber(state.totalRelaysEarned)}</p>
+        <p className="meta-subtitle">Relay Energy: {formatNumber(state.relayEnergy)} (Upgrades cost Relay Energy) | Total Relays Earned: {formatNumber(state.totalRelaysEarned)}</p>
         {[1, 2, 3].map((tier) => (
           <div key={`tier-${tier}`} className="tier-group">
             <div className="tier-heading">Tier {tier} {tier === 1 ? '(0+)' : tier === 2 ? '(5+ total relays)' : '(15+ total relays)'}</div>
@@ -223,8 +229,9 @@ function App() {
               return (
                 <div className="row" key={up.id}>
                   <div>
-                    <strong>{up.name}</strong> [RELAYS {formatNumber(cost)}] {up.repeatable ? `(Lv ${level})` : owned ? '(Owned)' : ''}
+                    <strong>{up.name}</strong> [ENERGY {formatNumber(cost)}] {up.repeatable ? `(Lv ${level})` : owned ? '(Owned)' : ''}
                     <div className="muted">{up.description}</div>
+                    <div className="muted">{up.id === 'relay_efficiency' ? `Current relay effect scaling: +${formatNumber(level * 5)}%` : up.id === 'lean_procurement' ? 'Current: scanners/dishes cost x0.90.' : up.id === 'finding_archive' ? 'Current: findings grant x1.25 DP.' : up.id === 'spectral_refinement' ? 'Current: noise scaling x0.88.' : up.id === 'autonomous_scanners' ? 'Current: +1.5 auto scans/sec.' : up.id === 'resonant_interface' ? 'Current: manual scans gain +2% SPS.' : 'Current: +1 starting Dish Array.'}</div>
                   </div>
                   <button disabled={locked || owned || !canPurchaseRelayUpgrade(state, up.id)} onClick={() => dispatch({ type: 'BUY_RELAY_UPGRADE', upgradeId: up.id })}>{locked ? `Unlocks at ${up.unlockAtRelays}` : 'Buy'}</button>
                 </div>
@@ -258,6 +265,7 @@ function App() {
               <div>
                 <strong>{up.name}</strong> [FRAGMENTS {formatNumber(cost)}] {up.repeatable ? `(Lv ${level})` : owned ? '(Owned)' : ''}
                 <div className="muted">{up.description}</div>
+                <div className="muted">{up.id === 'signal_echo' ? `Current: early generator costs x${formatNumber(Math.pow(0.94, level))}.` : up.id === 'archive_persistence' ? `Current: +${formatNumber(level * 0.12)} passive DP/s.` : up.id === 'network_memory' ? `Current: each new Relay grants +${formatNumber(1 + level)} Relay Energy.` : `Current: relay-upgrade costs x${formatNumber(Math.pow(0.92, level))}.`}</div>
               </div>
               <button disabled={owned || !canPurchaseBeaconUpgrade(state, up.id)} onClick={() => dispatch({ type: 'BUY_BEACON_UPGRADE', upgradeId: up.id })}>Buy</button>
             </div>

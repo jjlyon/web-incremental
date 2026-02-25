@@ -167,10 +167,12 @@ export const canPurchaseUpgrade = (state: GameState, upgradeId: UpgradeId): bool
   return state.dp >= cost;
 };
 
+export const getRelayEnergyPerRelay = (state: GameState): number => 1 + state.beaconUpgrades.network_memory;
+
 export const canPurchaseRelayProtocol = (state: GameState, protocolId: RelayProtocolId): boolean => {
   const protocol = RELAY_PROTOCOLS.find((item) => item.id === protocolId);
   if (!protocol) return false;
-  return state.relayProtocols[protocolId] === 0 && state.relayEnergy >= protocol.cost;
+  return state.relayProtocols[protocolId] === 0 && state.relays >= protocol.cost;
 };
 
 export const canPurchaseRelayUpgrade = (state: GameState, id: RelayUpgradeId): boolean => {
@@ -179,7 +181,7 @@ export const canPurchaseRelayUpgrade = (state: GameState, id: RelayUpgradeId): b
   if (state.totalRelaysEarned < up.unlockAtRelays) return false;
   if (!up.repeatable && state.relayUpgrades[id] > 0) return false;
   if (up.maxLevel && state.relayUpgrades[id] >= up.maxLevel) return false;
-  return state.relays >= getRelayUpgradeCost(state, id);
+  return state.relayEnergy >= getRelayUpgradeCost(state, id);
 };
 
 export const canPurchaseBeaconUpgrade = (state: GameState, id: BeaconUpgradeId): boolean => {

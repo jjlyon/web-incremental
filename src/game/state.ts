@@ -15,6 +15,7 @@ import {
   getMilestoneDpReward,
   getPassiveDpPerSecond,
   getPrestigeGain,
+  getRelayEnergyPerRelay,
   getRelayUpgradeCost,
   getTotalSps,
   getUpgradeCost,
@@ -115,7 +116,7 @@ const applyPrestigeReset = (state: GameState): GameState => {
   next.beaconUpgrades = { ...state.beaconUpgrades };
   next.relays = state.relays + gained;
   next.totalRelaysEarned = state.totalRelaysEarned + gained;
-  next.relayEnergy = state.relayEnergy + gained + state.beaconUpgrades.network_memory;
+  next.relayEnergy = state.relayEnergy + gained * getRelayEnergyPerRelay(state);
   next.relayProtocols = { ...state.relayProtocols };
   next.relayUpgrades = { ...state.relayUpgrades };
   next.milestonesClaimed = [...state.milestonesClaimed];
@@ -169,12 +170,12 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
       if (!canPurchaseRelayProtocol(state, action.protocolId)) return state;
       const protocol = RELAY_PROTOCOLS.find((item) => item.id === action.protocolId);
       if (!protocol) return state;
-      return { ...state, relayEnergy: state.relayEnergy - protocol.cost, relayProtocols: { ...state.relayProtocols, [action.protocolId]: 1 } };
+      return { ...state, relays: state.relays - protocol.cost, relayProtocols: { ...state.relayProtocols, [action.protocolId]: 1 } };
     }
     case 'BUY_RELAY_UPGRADE': {
       if (!canPurchaseRelayUpgrade(state, action.upgradeId)) return state;
       const cost = getRelayUpgradeCost(state, action.upgradeId);
-      return { ...state, relays: state.relays - cost, relayUpgrades: { ...state.relayUpgrades, [action.upgradeId]: state.relayUpgrades[action.upgradeId] + 1 } };
+      return { ...state, relayEnergy: state.relayEnergy - cost, relayUpgrades: { ...state.relayUpgrades, [action.upgradeId]: state.relayUpgrades[action.upgradeId] + 1 } };
     }
     case 'BUY_BEACON_UPGRADE': {
       if (!canPurchaseBeaconUpgrade(state, action.upgradeId)) return state;
