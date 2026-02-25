@@ -273,9 +273,10 @@ function App() {
       color: WAVE_COLORS[index],
       owned: state.generators[generatorId],
       path: path.trim(),
-      hasSignal: state.generators[generatorId] > 0,
+      isUnlocked: state.generators[generatorId] > 0,
     };
   });
+  const visibleGeneratorWaves = generatorWaveData.filter((wave) => wave.isUnlocked);
 
   return (
     <div className="app">
@@ -293,25 +294,25 @@ function App() {
       <div className="panel wave-panel">
         <div className="wave-header">
           <strong>Signal Oscilloscope</strong>
-          <span className="muted">Each generator renders its own sinewave; owned count boosts that line's amplitude.</span>
+          <span className="muted">Unlocked generators render individual sinewaves; prestige-locked tiers stay hidden until repurchased.</span>
         </div>
         <svg viewBox={`0 0 ${WAVE_WIDTH} ${WAVE_HEIGHT}`} className="wave-display" role="img" aria-label="Live generator sinewaves">
           <path d={`M0,${WAVE_HEIGHT / 2} H${WAVE_WIDTH}`} className="wave-baseline" />
-          {generatorWaveData.map((wave) => (
+          {visibleGeneratorWaves.map((wave) => (
             <path
               key={wave.generatorId}
               d={wave.path}
               className="wave-line"
-              style={{ stroke: wave.color, opacity: wave.hasSignal ? 0.95 : 0.22 }}
+              style={{ stroke: wave.color, opacity: 0.95 }}
             />
           ))}
         </svg>
         <div className="wave-legend">
-          {generatorWaveData.map((wave) => (
+          {visibleGeneratorWaves.length > 0 ? visibleGeneratorWaves.map((wave) => (
             <span key={`${wave.generatorId}-legend`} className="wave-legend-item" style={{ '--wave-color': wave.color } as CSSProperties}>
               {wave.generatorName}: {wave.owned}
             </span>
-          ))}
+          )) : <span className="muted">No unlocked generators yet.</span>}
         </div>
       </div>
 
