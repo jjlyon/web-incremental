@@ -1,40 +1,42 @@
-import { MILESTONES, UPGRADES } from './data';
-import { canPrestige, canPurchaseUpgrade, computeNoise, getAutoScanRate, getBuyMaxCount, getClickPower, getGeneratorCost, getPassiveDpPerSecond, getPrestigeGain, getTotalSps, getUpgradeCost } from './economy';
-import { Action, GameState, GeneratorId, UpgradeId } from './types';
+import { BEACON_UPGRADES, MILESTONES, RELAY_PROTOCOLS, RELAY_UPGRADES, UPGRADES } from './data';
+import {
+  canBeaconReset,
+  canPrestige,
+  canPurchaseBeaconUpgrade,
+  canPurchaseRelayProtocol,
+  canPurchaseRelayUpgrade,
+  canPurchaseUpgrade,
+  computeNoise,
+  getAutoScanRate,
+  getBeaconProjection,
+  getBuyMaxCount,
+  getClickPower,
+  getGeneratorCost,
+  getMilestoneDpReward,
+  getPassiveDpPerSecond,
+  getPrestigeGain,
+  getRelayUpgradeCost,
+  getTotalSps,
+  getUpgradeCost,
+  getBeaconUpgradeCost,
+} from './economy';
+import { Action, BeaconUpgradeId, GameState, GeneratorId, RelayProtocolId, RelayUpgradeId, UpgradeId } from './types';
 
-const emptyGenerators = {
-  scanner: 0,
-  dish: 0,
-  sifter: 0,
-  probe: 0,
-  supercomputer: 0,
-  correlator: 0,
-};
+const emptyGenerators = { scanner: 0, dish: 0, sifter: 0, probe: 0, supercomputer: 0, correlator: 0 };
+const emptyUpgrades = Object.fromEntries(UPGRADES.map((u) => [u.id, 0])) as Record<UpgradeId, number>;
+const emptyRelayProtocols = Object.fromEntries(RELAY_PROTOCOLS.map((u) => [u.id, 0])) as Record<RelayProtocolId, number>;
+const emptyRelayUpgrades = Object.fromEntries(RELAY_UPGRADES.map((u) => [u.id, 0])) as Record<RelayUpgradeId, number>;
+const emptyBeaconUpgrades = Object.fromEntries(BEACON_UPGRADES.map((u) => [u.id, 0])) as Record<BeaconUpgradeId, number>;
 
-const emptyUpgrades = {
-  better_antenna: 0,
-  narrowband_filter: 0,
-  burst_sampling: 0,
-  calibration_pass: 0,
-  thermal_stabilizers: 0,
-  error_correcting: 0,
-  adaptive_gain_control: 0,
-  dish_mk2: 0,
-  dish_mk3: 0,
-  probe_mk2: 0,
-  probe_mk3: 0,
-  supercomputer_mk2: 0,
-  supercomputer_mk3: 0,
-  unlock_buy_max: 0,
-  auto_scan_daemon_1: 0,
-  auto_scan_daemon_2: 0,
-  cataloged_patterns: 0,
-  signal_mapping: 0,
-  passive_research: 0,
-  probe_blueprints: 0,
-  relay_amplification: 0,
-  persistent_scripts: 0,
-  memory_of_void: 0,
+const applyRunStartBonuses = (state: GameState): GameState => {
+  const next = { ...state, generators: { ...state.generators } };
+  if (next.relayProtocols.boot_sequence_cache > 0) next.generators.scanner += 1;
+  if (next.relayProtocols.preloaded_coordinates > 0) {
+    next.signal += 200;
+    next.totalSignalEarned += 200;
+  }
+  if (next.relayUpgrades.forward_outpost > 0) next.generators.dish += 1;
+  return next;
 };
 
 export const createInitialState = (): GameState => {
@@ -45,8 +47,15 @@ export const createInitialState = (): GameState => {
     noise: 0,
     dp: 0,
     relays: 0,
+    totalRelaysEarned: 0,
+    relayEnergy: 0,
+    networkFragments: 0,
+    beacons: 0,
     generators: { ...emptyGenerators },
     upgrades: { ...emptyUpgrades },
+    relayProtocols: { ...emptyRelayProtocols },
+    relayUpgrades: { ...emptyRelayUpgrades },
+    beaconUpgrades: { ...emptyBeaconUpgrades },
     milestonesClaimed: [],
     currentTab: 'Control',
     autoClaimFindings: false,
@@ -57,11 +66,7 @@ export const createInitialState = (): GameState => {
   };
 };
 
-const addSignal = (state: GameState, amount: number): GameState => ({
-  ...state,
-  signal: state.signal + amount,
-  totalSignalEarned: state.totalSignalEarned + amount,
-});
+const addSignal = (state: GameState, amount: number): GameState => ({ ...state, signal: state.signal + amount, totalSignalEarned: state.totalSignalEarned + amount });
 
 const buyGenerator = (state: GameState, generatorId: GeneratorId, amount: number | 'max'): GameState => {
   const count = amount === 'max' ? getBuyMaxCount(state, generatorId) : amount;
@@ -78,18 +83,7 @@ const buyGenerator = (state: GameState, generatorId: GeneratorId, amount: number
   }
 
   if (!purchased) return state;
-
-  return {
-    ...state,
-    signal,
-    generators: { ...state.generators, [generatorId]: owned + purchased },
-  };
-};
-
-const spend = (state: GameState, cost: number, type: 'signal' | 'dp' | 'relays'): GameState => {
-  if (type === 'signal') return { ...state, signal: state.signal - cost };
-  if (type === 'dp') return { ...state, dp: state.dp - cost };
-  return { ...state, relays: state.relays - cost };
+  return { ...state, signal, generators: { ...state.generators, [generatorId]: owned + purchased } };
 };
 
 const sanitize = (state: GameState): GameState => ({ ...state, noise: computeNoise(state) });
@@ -101,7 +95,7 @@ const maybeAutoClaim = (state: GameState): GameState => {
     if (!next.milestonesClaimed.includes(milestone.id) && milestone.condition(next)) {
       next = {
         ...next,
-        dp: next.dp + milestone.dpReward,
+        dp: next.dp + getMilestoneDpReward(next, milestone.dpReward),
         milestonesClaimed: [...next.milestonesClaimed, milestone.id],
       };
     }
@@ -113,24 +107,39 @@ const applyPrestigeReset = (state: GameState): GameState => {
   const gained = getPrestigeGain(state);
   if (gained <= 0 || !canPrestige(state)) return state;
 
-  const keepAutomation = state.upgrades.persistent_scripts > 0;
-  const keepUpgrades: UpgradeId[] = ['relay_amplification', 'persistent_scripts', 'memory_of_void'];
-  if (keepAutomation) keepUpgrades.push('unlock_buy_max', 'auto_scan_daemon_1', 'auto_scan_daemon_2');
-
+  const keepAutomation = state.relayProtocols.persistent_scripts > 0;
   const next = createInitialState();
   next.dp = state.dp;
+  next.networkFragments = state.networkFragments;
+  next.beacons = state.beacons;
+  next.beaconUpgrades = { ...state.beaconUpgrades };
   next.relays = state.relays + gained;
+  next.totalRelaysEarned = state.totalRelaysEarned + gained;
+  next.relayEnergy = state.relayEnergy + gained + state.beaconUpgrades.network_memory;
+  next.relayProtocols = { ...state.relayProtocols };
+  next.relayUpgrades = { ...state.relayUpgrades };
   next.milestonesClaimed = [...state.milestonesClaimed];
-  next.upgrades = { ...emptyUpgrades };
-  for (const id of keepUpgrades) next.upgrades[id] = state.upgrades[id];
 
-  if (next.upgrades.memory_of_void > 0) {
-    next.signal = 200;
-    next.totalSignalEarned = 200;
-    next.generators.scanner = 1;
+  if (keepAutomation) {
+    next.upgrades.unlock_buy_max = state.upgrades.unlock_buy_max;
+    next.upgrades.auto_scan_daemon_1 = state.upgrades.auto_scan_daemon_1;
+    next.upgrades.auto_scan_daemon_2 = state.upgrades.auto_scan_daemon_2;
   }
 
-  return sanitize(next);
+  return sanitize(applyRunStartBonuses(next));
+};
+
+const applyBeaconReset = (state: GameState): GameState => {
+  const gained = getBeaconProjection(state);
+  if (gained <= 0 || !canBeaconReset(state)) return state;
+
+  const next = createInitialState();
+  next.beacons = state.beacons + gained;
+  next.networkFragments = state.networkFragments + gained;
+  next.beaconUpgrades = { ...state.beaconUpgrades };
+  next.milestonesClaimed = [...state.milestonesClaimed];
+
+  return sanitize(applyRunStartBonuses(next));
 };
 
 export const gameReducer = (state: GameState, action: Action): GameState => {
@@ -144,8 +153,7 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
           next = buyGenerator(next, gen, 'max');
         }
       }
-      next = sanitize(next);
-      return maybeAutoClaim(next);
+      return maybeAutoClaim(sanitize(next));
     }
     case 'MANUAL_SCAN':
       return sanitize(addSignal(state, getClickPower(state)));
@@ -154,14 +162,29 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
     case 'BUY_UPGRADE': {
       const up = UPGRADES.find((u) => u.id === action.upgradeId);
       if (!up || !canPurchaseUpgrade(state, action.upgradeId)) return state;
-      const upgradeCost = getUpgradeCost(state, action.upgradeId);
-      const spent = spend(state, upgradeCost, up.currencyType);
+      const spent = up.currencyType === 'signal' ? { ...state, signal: state.signal - getUpgradeCost(state, action.upgradeId) } : { ...state, dp: state.dp - getUpgradeCost(state, action.upgradeId) };
       return sanitize({ ...spent, upgrades: { ...spent.upgrades, [action.upgradeId]: spent.upgrades[action.upgradeId] + 1 } });
+    }
+    case 'BUY_RELAY_PROTOCOL': {
+      if (!canPurchaseRelayProtocol(state, action.protocolId)) return state;
+      const protocol = RELAY_PROTOCOLS.find((item) => item.id === action.protocolId);
+      if (!protocol) return state;
+      return { ...state, relayEnergy: state.relayEnergy - protocol.cost, relayProtocols: { ...state.relayProtocols, [action.protocolId]: 1 } };
+    }
+    case 'BUY_RELAY_UPGRADE': {
+      if (!canPurchaseRelayUpgrade(state, action.upgradeId)) return state;
+      const cost = getRelayUpgradeCost(state, action.upgradeId);
+      return { ...state, relays: state.relays - cost, relayUpgrades: { ...state.relayUpgrades, [action.upgradeId]: state.relayUpgrades[action.upgradeId] + 1 } };
+    }
+    case 'BUY_BEACON_UPGRADE': {
+      if (!canPurchaseBeaconUpgrade(state, action.upgradeId)) return state;
+      const cost = getBeaconUpgradeCost(state, action.upgradeId);
+      return { ...state, networkFragments: state.networkFragments - cost, beaconUpgrades: { ...state.beaconUpgrades, [action.upgradeId]: state.beaconUpgrades[action.upgradeId] + 1 } };
     }
     case 'CLAIM_MILESTONE': {
       const milestone = MILESTONES.find((m) => m.id === action.milestoneId);
       if (!milestone || state.milestonesClaimed.includes(action.milestoneId) || !milestone.condition(state)) return state;
-      return { ...state, dp: state.dp + milestone.dpReward, milestonesClaimed: [...state.milestonesClaimed, milestone.id] };
+      return { ...state, dp: state.dp + getMilestoneDpReward(state, milestone.dpReward), milestonesClaimed: [...state.milestonesClaimed, milestone.id] };
     }
     case 'SET_TAB':
       return { ...state, currentTab: action.tab };
@@ -173,6 +196,8 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
       return { ...state, autoBuyEnabled: !state.autoBuyEnabled };
     case 'PRESTIGE':
       return applyPrestigeReset(state);
+    case 'BEACON_RESET':
+      return applyBeaconReset(state);
     case 'LOAD_STATE':
       return sanitize(action.payload);
     case 'UPDATE_SAVE_TIME':
@@ -189,4 +214,11 @@ export const verifyPrestigeReset = (state: GameState): boolean => {
   if (projected <= 0) return true;
   const reset = applyPrestigeReset(state);
   return reset.signal >= 0 && reset.generators.correlator === 0 && reset.relays >= state.relays;
+};
+
+export const verifyBeaconReset = (state: GameState): boolean => {
+  const projected = getBeaconProjection(state);
+  if (projected <= 0) return true;
+  const reset = applyBeaconReset(state);
+  return reset.relays === 0 && reset.dp === 0 && reset.networkFragments >= state.networkFragments;
 };
