@@ -127,6 +127,14 @@ function App() {
   const canPrestigeNow = canPrestige(state) && relayGain > 0;
   const canBeaconNow = canBeaconReset(state) && beaconGain > 0;
 
+  const hasAffordableGenerator = GENERATORS.some((gen) => state.signal >= getGeneratorCost(gen.id, state.generators[gen.id], 0, state));
+  const hasAffordableSignalUpgrade = UPGRADES.some((up) => up.currencyType === 'signal' && canPurchaseUpgrade(state, up.id));
+  const hasAffordableDpUpgrade = UPGRADES.some((up) => up.currencyType === 'dp' && canPurchaseUpgrade(state, up.id));
+  const hasClaimableFinding = MILESTONES.some((m) => !state.milestonesClaimed.includes(m.id) && m.condition(state));
+  const hasAffordableRelayProtocol = RELAY_PROTOCOLS.some((protocol) => canPurchaseRelayProtocol(state, protocol.id));
+  const hasAffordableRelayUpgrade = RELAY_UPGRADES.some((up) => canPurchaseRelayUpgrade(state, up.id));
+  const hasAffordableBeaconUpgrade = BEACON_UPGRADES.some((up) => canPurchaseBeaconUpgrade(state, up.id));
+
   const renderGenerators = () => (
     <div className="panel">
       <h3>Generators</h3>
@@ -292,7 +300,15 @@ function App() {
         <div className="wave-legend">{visibleGeneratorWaves.length > 0 ? visibleGeneratorWaves.map((wave) => <span key={`${wave.generatorId}-legend`} className="wave-legend-item" style={{ '--wave-color': wave.color } as CSSProperties}>{wave.generatorName}: {wave.owned}</span>) : <span className="muted">No unlocked generators yet.</span>}</div>
       </div>
 
-      <div className="tabs">{tabs.map((tab) => <TabButton key={tab} tab={tab} active={state.currentTab === tab} hasAttention={tab === 'Prestige' && (canPrestigeNow || canBeaconNow)} onClick={(t) => dispatch({ type: 'SET_TAB', tab: t })} />)}</div>
+      <div className="tabs">{tabs.map((tab) => {
+        const hasAttention =
+          (tab === 'Generators' && hasAffordableGenerator) ||
+          (tab === 'Upgrades' && hasAffordableSignalUpgrade) ||
+          (tab === 'DP Upgrades' && hasAffordableDpUpgrade) ||
+          (tab === 'Findings' && hasClaimableFinding) ||
+          (tab === 'Prestige' && (canPrestigeNow || canBeaconNow || hasAffordableRelayProtocol || hasAffordableRelayUpgrade || hasAffordableBeaconUpgrade));
+        return <TabButton key={tab} tab={tab} active={state.currentTab === tab} hasAttention={hasAttention} onClick={(t) => dispatch({ type: 'SET_TAB', tab: t })} />;
+      })}</div>
 
       {state.currentTab === 'Control' && <div className="panel"><h3>Control Console</h3><button className="big" onClick={handleManualScan}>Manual Scan +{formatNumber(clickPower)} Signal</button><p className="muted">Run loop: Signal → DP → Relays → Beacons.</p></div>}
       {state.currentTab === 'Generators' && renderGenerators()}
