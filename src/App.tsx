@@ -25,7 +25,7 @@ import { clearSave, exportSave, importSave, loadGame, saveGame } from './game/sa
 import { createInitialState, gameReducer, verifyBeaconReset, verifyPrestigeReset } from './game/state';
 import { GeneratorId, TabName } from './game/types';
 
-const tabs: TabName[] = ['Control', 'Generators', 'Upgrades', 'DP Upgrades', 'Findings', 'Prestige', 'Stats'];
+const tabs: TabName[] = ['Control', 'Generators', 'Upgrades', 'DP Upgrades', 'Findings', 'Relay', 'Beacon', 'Stats'];
 const OFFLINE_TICK_CHUNK_SECONDS = 1;
 const MAX_OFFLINE_SECONDS = 60 * 60;
 const WAVE_WIDTH = 1040;
@@ -134,6 +134,8 @@ function App() {
   const hasAffordableRelayProtocol = RELAY_PROTOCOLS.some((protocol) => canPurchaseRelayProtocol(state, protocol.id));
   const hasAffordableRelayUpgrade = RELAY_UPGRADES.some((up) => canPurchaseRelayUpgrade(state, up.id));
   const hasAffordableBeaconUpgrade = BEACON_UPGRADES.some((up) => canPurchaseBeaconUpgrade(state, up.id));
+  const hasRelayLayerUnlocked = state.totalRelaysEarned > 0 || state.relays > 0 || state.relayEnergy > 0 || canPrestige(state) || canPrestigeNow;
+  const hasBeaconLayerUnlocked = state.beacons > 0 || state.networkFragments > 0 || canBeaconReset(state) || canBeaconNow;
 
   const renderGenerators = () => (
     <div className="panel">
@@ -184,73 +186,84 @@ function App() {
     </div>
   );
 
-  const renderPrestige = () => (
-    <div className="panel">
-      <h3>Meta Uplink</h3>
-      <div className="meta-grid">
-        <div className="panel inset">
-          <h4>Relay Uplink (Reset Signal Run)</h4>
-          <p className="muted">Keeps: DP, Relays, Relay Energy, Relay Protocols, Relay Upgrades. Resets: signal, generators, signal upgrades.</p>
-          <p>Projection if reset now: <strong>+{formatNumber(relayGain)} Relays</strong> and <strong>+{formatNumber(relayGain + state.beaconUpgrades.network_memory)} Relay Energy</strong>.</p>
-          <button disabled={!canPrestigeNow} onClick={() => dispatch({ type: 'PRESTIGE' })}>Initiate Relay Reset</button>
-        </div>
-        <div className="panel inset">
-          <h4>Beacon Network (Reset Signal + DP + Relays)</h4>
-          <p className="muted">Unlock at {BALANCE.beaconUnlockRelays} total relays or {BALANCE.beaconUnlockSignal.toExponential(0)} total signal.</p>
-          <p className="muted">Keeps: Beacons, Fragments, Beacon upgrades, findings. Resets: Signal, DP, Relays, Relay Energy, Relay Protocols/Upgrades.</p>
-          <p>Projection if reset now: <strong>+{formatNumber(beaconGain)} Network Fragments</strong>.</p>
-          <button disabled={!canBeaconNow} onClick={() => dispatch({ type: 'BEACON_RESET' })}>Initialize Beacon Reset</button>
-        </div>
+  const renderRelay = () => (
+    <div className="meta-grid">
+      <div className="panel">
+        <h3>Relay Uplink</h3>
+        <p className="muted">Keeps: DP, Relays, Relay Energy, Relay Protocols, Relay Upgrades. Resets: signal, generators, signal upgrades.</p>
+        <p>Projection if reset now: <strong>+{formatNumber(relayGain)} Relays</strong> and <strong>+{formatNumber(relayGain + state.beaconUpgrades.network_memory)} Relay Energy</strong>.</p>
+        <button disabled={!canPrestigeNow} onClick={() => dispatch({ type: 'PRESTIGE' })}>Initiate Relay Reset</button>
       </div>
 
-      <h4>Signal Protocols (Relay Energy: {formatNumber(state.relayEnergy)})</h4>
-      {RELAY_PROTOCOLS.map((protocol) => (
-        <div className="row" key={protocol.id}>
-          <div>
-            <strong>{protocol.name}</strong> [ENERGY {protocol.cost}] {state.relayProtocols[protocol.id] > 0 ? '(Installed)' : ''}
-            <div className="muted">{protocol.description}</div>
-          </div>
-          {state.relayProtocols[protocol.id] === 0 && <button disabled={!canPurchaseRelayProtocol(state, protocol.id)} onClick={() => dispatch({ type: 'BUY_RELAY_PROTOCOL', protocolId: protocol.id })}>Install</button>}
-        </div>
-      ))}
-
-      <h4>Relay Upgrades (Relays: {formatNumber(state.relays)} | Total Earned: {formatNumber(state.totalRelaysEarned)})</h4>
-      {[1, 2, 3].map((tier) => (
-        <div key={`tier-${tier}`}>
-          <div className="muted">Tier {tier} {tier === 1 ? '(0+)' : tier === 2 ? '(5+ total relays)' : '(15+ total relays)'}</div>
-          {RELAY_UPGRADES.filter((up) => up.tier === tier).map((up) => {
-            const locked = state.totalRelaysEarned < up.unlockAtRelays;
-            const level = state.relayUpgrades[up.id];
-            const cost = getRelayUpgradeCost(state, up.id);
-            const owned = !up.repeatable && level > 0;
-            return (
-              <div className="row" key={up.id}>
-                <div>
-                  <strong>{up.name}</strong> [RELAYS {formatNumber(cost)}] {up.repeatable ? `(Lv ${level})` : owned ? '(Owned)' : ''}
-                  <div className="muted">{up.description}</div>
-                </div>
-                <button disabled={locked || owned || !canPurchaseRelayUpgrade(state, up.id)} onClick={() => dispatch({ type: 'BUY_RELAY_UPGRADE', upgradeId: up.id })}>{locked ? `Unlocks at ${up.unlockAtRelays}` : 'Buy'}</button>
-              </div>
-            );
-          })}
-        </div>
-      ))}
-
-      <h4>Beacon Upgrades (Network Fragments: {formatNumber(state.networkFragments)})</h4>
-      {BEACON_UPGRADES.map((up) => {
-        const level = state.beaconUpgrades[up.id];
-        const cost = getBeaconUpgradeCost(state, up.id);
-        const owned = !up.repeatable && level > 0;
-        return (
-          <div className="row" key={up.id}>
+      <div className="panel">
+        <h3>Signal Protocols</h3>
+        <p className="meta-subtitle">Relay Energy: {formatNumber(state.relayEnergy)}</p>
+        {RELAY_PROTOCOLS.map((protocol) => (
+          <div className="row" key={protocol.id}>
             <div>
-              <strong>{up.name}</strong> [FRAGMENTS {formatNumber(cost)}] {up.repeatable ? `(Lv ${level})` : owned ? '(Owned)' : ''}
-              <div className="muted">{up.description}</div>
+              <strong>{protocol.name}</strong> [ENERGY {protocol.cost}] {state.relayProtocols[protocol.id] > 0 ? '(Installed)' : ''}
+              <div className="muted">{protocol.description}</div>
             </div>
-            <button disabled={owned || !canPurchaseBeaconUpgrade(state, up.id)} onClick={() => dispatch({ type: 'BUY_BEACON_UPGRADE', upgradeId: up.id })}>Buy</button>
+            {state.relayProtocols[protocol.id] === 0 && <button disabled={!canPurchaseRelayProtocol(state, protocol.id)} onClick={() => dispatch({ type: 'BUY_RELAY_PROTOCOL', protocolId: protocol.id })}>Install</button>}
           </div>
-        );
-      })}
+        ))}
+      </div>
+
+      <div className="panel meta-panel-full">
+        <h3>Relay Upgrades</h3>
+        <p className="meta-subtitle">Relays: {formatNumber(state.relays)} | Total Earned: {formatNumber(state.totalRelaysEarned)}</p>
+        {[1, 2, 3].map((tier) => (
+          <div key={`tier-${tier}`} className="tier-group">
+            <div className="tier-heading">Tier {tier} {tier === 1 ? '(0+)' : tier === 2 ? '(5+ total relays)' : '(15+ total relays)'}</div>
+            {RELAY_UPGRADES.filter((up) => up.tier === tier).map((up) => {
+              const locked = state.totalRelaysEarned < up.unlockAtRelays;
+              const level = state.relayUpgrades[up.id];
+              const cost = getRelayUpgradeCost(state, up.id);
+              const owned = !up.repeatable && level > 0;
+              return (
+                <div className="row" key={up.id}>
+                  <div>
+                    <strong>{up.name}</strong> [RELAYS {formatNumber(cost)}] {up.repeatable ? `(Lv ${level})` : owned ? '(Owned)' : ''}
+                    <div className="muted">{up.description}</div>
+                  </div>
+                  <button disabled={locked || owned || !canPurchaseRelayUpgrade(state, up.id)} onClick={() => dispatch({ type: 'BUY_RELAY_UPGRADE', upgradeId: up.id })}>{locked ? `Unlocks at ${up.unlockAtRelays}` : 'Buy'}</button>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const renderBeacon = () => (
+    <div className="meta-grid">
+      <div className="panel">
+        <h3>Beacon Network</h3>
+        <p className="muted">Unlock at {BALANCE.beaconUnlockRelays} total relays or {BALANCE.beaconUnlockSignal.toExponential(0)} total signal.</p>
+        <p className="muted">Keeps: Beacons, Fragments, Beacon upgrades, findings. Resets: Signal, DP, Relays, Relay Energy, Relay Protocols/Upgrades.</p>
+        <p>Projection if reset now: <strong>+{formatNumber(beaconGain)} Network Fragments</strong>.</p>
+        <button disabled={!canBeaconNow} onClick={() => dispatch({ type: 'BEACON_RESET' })}>Initialize Beacon Reset</button>
+      </div>
+
+      <div className="panel meta-panel-full">
+        <h3>Beacon Upgrades</h3>
+        <p className="meta-subtitle">Network Fragments: {formatNumber(state.networkFragments)} | Beacons: {formatNumber(state.beacons)}</p>
+        {BEACON_UPGRADES.map((up) => {
+          const level = state.beaconUpgrades[up.id];
+          const cost = getBeaconUpgradeCost(state, up.id);
+          const owned = !up.repeatable && level > 0;
+          return (
+            <div className="row" key={up.id}>
+              <div>
+                <strong>{up.name}</strong> [FRAGMENTS {formatNumber(cost)}] {up.repeatable ? `(Lv ${level})` : owned ? '(Owned)' : ''}
+                <div className="muted">{up.description}</div>
+              </div>
+              <button disabled={owned || !canPurchaseBeaconUpgrade(state, up.id)} onClick={() => dispatch({ type: 'BUY_BEACON_UPGRADE', upgradeId: up.id })}>Buy</button>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 
@@ -290,8 +303,11 @@ function App() {
       <h1>Signal & Salvage</h1>
       <div className="panel statsline">
         <div>Signal: {formatNumber(state.signal)}</div><div>Signal/s: {formatNumber(sps)}</div><div>Click Power: {formatNumber(clickPower)}</div>
-        <div>Noise: {formatNumber(state.noise)}</div><div>DP: {formatNumber(state.dp)}</div><div>Relays: {formatNumber(state.relays)}</div>
-        <div>Relay Energy: {formatNumber(state.relayEnergy)}</div><div>Fragments: {formatNumber(state.networkFragments)}</div><div>Beacons: {formatNumber(state.beacons)}</div>
+        <div>Noise: {formatNumber(state.noise)}</div><div>DP: {formatNumber(state.dp)}</div>
+        {hasRelayLayerUnlocked && <div>Relays: {formatNumber(state.relays)}</div>}
+        {hasRelayLayerUnlocked && <div>Relay Energy: {formatNumber(state.relayEnergy)}</div>}
+        {hasBeaconLayerUnlocked && <div>Fragments: {formatNumber(state.networkFragments)}</div>}
+        {hasBeaconLayerUnlocked && <div>Beacons: {formatNumber(state.beacons)}</div>}
       </div>
 
       <div className="panel wave-panel">
@@ -300,13 +316,14 @@ function App() {
         <div className="wave-legend">{visibleGeneratorWaves.length > 0 ? visibleGeneratorWaves.map((wave) => <span key={`${wave.generatorId}-legend`} className="wave-legend-item" style={{ '--wave-color': wave.color } as CSSProperties}>{wave.generatorName}: {wave.owned}</span>) : <span className="muted">No unlocked generators yet.</span>}</div>
       </div>
 
-      <div className="tabs">{tabs.map((tab) => {
+      <div className="tabs">{tabs.filter((tab) => tab !== 'Beacon' || hasBeaconLayerUnlocked).map((tab) => {
         const hasAttention =
           (tab === 'Generators' && hasAffordableGenerator) ||
           (tab === 'Upgrades' && hasAffordableSignalUpgrade) ||
           (tab === 'DP Upgrades' && hasAffordableDpUpgrade) ||
           (tab === 'Findings' && hasClaimableFinding) ||
-          (tab === 'Prestige' && (canPrestigeNow || canBeaconNow || hasAffordableRelayProtocol || hasAffordableRelayUpgrade || hasAffordableBeaconUpgrade));
+          (tab === 'Relay' && (canPrestigeNow || hasAffordableRelayProtocol || hasAffordableRelayUpgrade)) ||
+          (tab === 'Beacon' && (canBeaconNow || hasAffordableBeaconUpgrade));
         return <TabButton key={tab} tab={tab} active={state.currentTab === tab} hasAttention={hasAttention} onClick={(t) => dispatch({ type: 'SET_TAB', tab: t })} />;
       })}</div>
 
@@ -315,7 +332,8 @@ function App() {
       {state.currentTab === 'Upgrades' && <div className="panel"><h3>Signal Upgrades</h3>{renderUpgradeRows('signal')}</div>}
       {state.currentTab === 'DP Upgrades' && <div className="panel"><h3>DP Upgrades</h3>{renderUpgradeRows('dp')}</div>}
       {state.currentTab === 'Findings' && renderFindings()}
-      {state.currentTab === 'Prestige' && renderPrestige()}
+      {state.currentTab === 'Relay' && renderRelay()}
+      {state.currentTab === 'Beacon' && hasBeaconLayerUnlocked && renderBeacon()}
       {state.currentTab === 'Stats' && (
         <div className="panel"><h3>Stats & Save Tools</h3><div>Total Signal Earned: {formatNumber(state.totalSignalEarned)}</div><div>Last Save: {new Date(state.lastSaveAt).toLocaleTimeString()}</div>
           <div className="actions"><button onClick={() => { saveGame(state); dispatch({ type: 'UPDATE_SAVE_TIME', now: Date.now() }); }}>Manual Save</button><button onClick={() => { clearSave(); dispatch({ type: 'HARD_RESET' }); }}>Hard Reset</button></div>

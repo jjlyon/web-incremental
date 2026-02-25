@@ -124,3 +124,8 @@ textarea { width: 100%; margin-top: 0.3rem; background: #0f131b; color: #d4d8df;
 
 .meta-grid { display:grid; grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); gap:0.5rem; }
 .inset { margin-bottom:0.25rem; background:#141a24; }
+
+.meta-panel-full { grid-column: 1 / -1; }
+.meta-subtitle { color:#c7d3e6; font-size:0.92rem; margin-top:-0.15rem; margin-bottom:0.45rem; }
+.tier-group { margin-bottom: 0.5rem; }
+.tier-heading { color:#d6e2f5; font-size:0.9rem; font-weight:700; letter-spacing:0.02em; margin:0.25rem 0; }

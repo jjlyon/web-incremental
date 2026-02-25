@@ -3,7 +3,7 @@ import { GameState, TabName } from './types';
 
 const SAVE_KEY = 'signal-and-salvage-save-v2';
 const LEGACY_SAVE_KEY = 'signal-and-salvage-save-v1';
-const VALID_TABS: TabName[] = ['Control', 'Generators', 'Upgrades', 'DP Upgrades', 'Findings', 'Prestige', 'Stats'];
+const VALID_TABS: TabName[] = ['Control', 'Generators', 'Upgrades', 'DP Upgrades', 'Findings', 'Relay', 'Beacon', 'Stats'];
 const VALID_MILESTONES = new Set(MILESTONES.map((milestone) => milestone.id));
 
 const isObjectRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
@@ -98,7 +98,10 @@ const parseGameState = (raw: string): GameState | null => {
       milestonesClaimed: Array.isArray(parsed.milestonesClaimed)
         ? parsed.milestonesClaimed.filter((entry): entry is string => typeof entry === 'string' && VALID_MILESTONES.has(entry))
         : [],
-      currentTab: typeof parsed.currentTab === 'string' && VALID_TABS.includes(parsed.currentTab as TabName) ? (parsed.currentTab as TabName) : 'Control',
+      currentTab: typeof parsed.currentTab === 'string'
+        && VALID_TABS.includes((parsed.currentTab === 'Prestige' ? 'Relay' : parsed.currentTab) as TabName)
+        ? ((parsed.currentTab === 'Prestige' ? 'Relay' : parsed.currentTab) as TabName)
+        : 'Control',
       autoClaimFindings: parsed.autoClaimFindings === true,
       autoBuyEnabled: parsed.autoBuyEnabled === true,
       buyAmount: parsed.buyAmount === 10 || parsed.buyAmount === 'max' ? parsed.buyAmount : 1,

@@ -139,7 +139,8 @@ export type TabName =
   | 'Upgrades'
   | 'DP Upgrades'
   | 'Findings'
-  | 'Prestige'
+  | 'Relay'
+  | 'Beacon'
   | 'Stats';
 
 export type Action =
