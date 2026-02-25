@@ -84,9 +84,32 @@ textarea { width: 100%; margin-top: 0.3rem; background: #0f131b; color: #d4d8df;
 
 .wave-line {
   fill: none;
-  stroke: #67f3a1;
-  stroke-width: 2;
+  stroke-width: 1.8;
   stroke-linejoin: round;
   stroke-linecap: round;
-  filter: drop-shadow(0 0 7px rgba(103, 243, 161, 0.55));
+  filter: drop-shadow(0 0 4px rgba(225, 235, 255, 0.2));
+}
+
+.wave-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.8rem;
+  margin-top: 0.5rem;
+  font-size: 0.82rem;
+  color: #c8d2e4;
+}
+
+.wave-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.wave-legend-item::before {
+  content: '';
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: var(--wave-color);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--wave-color) 65%, #ffffff 35%);
 }

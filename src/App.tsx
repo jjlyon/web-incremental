@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { CSSProperties, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { TabButton } from './components/TabButton';
 import { GENERATORS, MILESTONES, UPGRADES } from './game/data';
 import { canPrestige, canPurchaseUpgrade, formatNumber, getBuyMaxCount, getClickPower, getGeneratorCost, getPassiveDpPerSecond, getPrestigeGain, getTotalSps, getUpgradeCost, runSanityChecks } from './game/economy';
@@ -14,6 +14,7 @@ const WAVE_HEIGHT = 150;
 const WAVE_SAMPLE_STEP = 4;
 const WAVE_SPEED = 1.8;
 const WAVE_FREQUENCIES = [0.45, 0.9, 1.8, 3, 4.8, 7.2];
+const WAVE_COLORS = ['#67f3a1', '#6ad5ff', '#9b8cff', '#c5ff6a', '#ffba6a', '#ff6a9f'];
 
 const generatorWaveOrder: GeneratorId[] = ['scanner', 'dish', 'sifter', 'probe', 'supercomputer', 'correlator'];
 
@@ -253,24 +254,28 @@ function App() {
 
   const sanityIssues = runSanityChecks(state);
   const waveTime = performance.now() / 1000;
-  const generatorWaveAmplitudes = generatorWaveOrder.map((generatorId) => state.generators[generatorId] * 0.06);
-  const totalWaveAmplitude = generatorWaveAmplitudes.reduce((sum, amplitude) => sum + amplitude, 0);
-  const amplitudeNormalizer = Math.max(1, totalWaveAmplitude / 36);
-  const wavePath = (() => {
-    const baseline = WAVE_HEIGHT / 2;
+  const rawAmplitudes = generatorWaveOrder.map((generatorId) => state.generators[generatorId] * 0.6);
+  const largestAmplitude = Math.max(1, ...rawAmplitudes);
+  const amplitudeNormalizer = Math.max(1, largestAmplitude / 26);
+  const generatorWaveData = generatorWaveOrder.map((generatorId, index) => {
+    const amplitude = rawAmplitudes[index] / amplitudeNormalizer;
+    const generatorName = GENERATORS.find((generator) => generator.id === generatorId)?.name ?? generatorId;
     let path = '';
     for (let x = 0; x <= WAVE_WIDTH; x += WAVE_SAMPLE_STEP) {
       const xRatio = x / WAVE_WIDTH;
-      let y = baseline;
-      for (let index = 0; index < generatorWaveOrder.length; index += 1) {
-        const amplitude = generatorWaveAmplitudes[index] / amplitudeNormalizer;
-        const radians = xRatio * WAVE_FREQUENCIES[index] * Math.PI * 2 + waveTime * WAVE_SPEED;
-        y += Math.sin(radians) * amplitude;
-      }
+      const radians = xRatio * WAVE_FREQUENCIES[index] * Math.PI * 2 + waveTime * WAVE_SPEED;
+      const y = WAVE_HEIGHT / 2 + Math.sin(radians) * amplitude;
       path += `${x === 0 ? 'M' : 'L'}${x},${y.toFixed(2)} `;
     }
-    return path.trim();
-  })();
+    return {
+      generatorId,
+      generatorName,
+      color: WAVE_COLORS[index],
+      owned: state.generators[generatorId],
+      path: path.trim(),
+      hasSignal: state.generators[generatorId] > 0,
+    };
+  });
 
   return (
     <div className="app">
@@ -288,12 +293,26 @@ function App() {
       <div className="panel wave-panel">
         <div className="wave-header">
           <strong>Signal Oscilloscope</strong>
-          <span className="muted">Each owned generator adds amplitude to its frequency band.</span>
+          <span className="muted">Each generator renders its own sinewave; owned count boosts that line's amplitude.</span>
         </div>
-        <svg viewBox={`0 0 ${WAVE_WIDTH} ${WAVE_HEIGHT}`} className="wave-display" role="img" aria-label="Live composite generator wave">
+        <svg viewBox={`0 0 ${WAVE_WIDTH} ${WAVE_HEIGHT}`} className="wave-display" role="img" aria-label="Live generator sinewaves">
           <path d={`M0,${WAVE_HEIGHT / 2} H${WAVE_WIDTH}`} className="wave-baseline" />
-          <path d={wavePath} className="wave-line" />
+          {generatorWaveData.map((wave) => (
+            <path
+              key={wave.generatorId}
+              d={wave.path}
+              className="wave-line"
+              style={{ stroke: wave.color, opacity: wave.hasSignal ? 0.95 : 0.22 }}
+            />
+          ))}
         </svg>
+        <div className="wave-legend">
+          {generatorWaveData.map((wave) => (
+            <span key={`${wave.generatorId}-legend`} className="wave-legend-item" style={{ '--wave-color': wave.color } as CSSProperties}>
+              {wave.generatorName}: {wave.owned}
+            </span>
+          ))}
+        </div>
       </div>
 
       <div className="tabs">
