@@ -113,3 +113,11 @@ textarea { width: 100%; margin-top: 0.3rem; background: #0f131b; color: #d4d8df;
   background: var(--wave-color);
   box-shadow: 0 0 6px color-mix(in srgb, var(--wave-color) 65%, #ffffff 35%);
 }
+
+
+.wave-click-marker {
+  fill: #ffffff;
+  stroke: #67f3a1;
+  stroke-width: 1;
+  filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.65));
+}
