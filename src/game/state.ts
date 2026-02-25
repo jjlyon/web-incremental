@@ -116,7 +116,7 @@ const applyPrestigeReset = (state: GameState): GameState => {
   next.beaconUpgrades = { ...state.beaconUpgrades };
   next.relays = state.relays + gained;
   next.totalRelaysEarned = state.totalRelaysEarned + gained;
-  next.relayEnergy = state.relayEnergy + gained * getRelayEnergyPerRelay(state);
+  next.relayEnergy = state.relayEnergy + (state.relays + gained) * getRelayEnergyPerRelay(state);
   next.relayProtocols = { ...state.relayProtocols };
   next.relayUpgrades = { ...state.relayUpgrades };
   next.milestonesClaimed = [...state.milestonesClaimed];
