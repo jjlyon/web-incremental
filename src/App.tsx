@@ -9,6 +9,13 @@ import { GeneratorId, TabName } from './game/types';
 const tabs: TabName[] = ['Control', 'Generators', 'Upgrades', 'DP Upgrades', 'Findings', 'Prestige', 'Stats'];
 const OFFLINE_TICK_CHUNK_SECONDS = 1;
 const MAX_OFFLINE_SECONDS = 60 * 60;
+const WAVE_WIDTH = 1040;
+const WAVE_HEIGHT = 150;
+const WAVE_SAMPLE_STEP = 4;
+const WAVE_SPEED = 1.8;
+const WAVE_FREQUENCIES = [0.45, 0.9, 1.8, 3, 4.8, 7.2];
+
+const generatorWaveOrder: GeneratorId[] = ['scanner', 'dish', 'sifter', 'probe', 'supercomputer', 'correlator'];
 
 function App() {
   const [state, dispatch] = useReducer(gameReducer, undefined, createInitialState);
@@ -245,6 +252,25 @@ function App() {
   };
 
   const sanityIssues = runSanityChecks(state);
+  const waveTime = performance.now() / 1000;
+  const generatorWaveAmplitudes = generatorWaveOrder.map((generatorId) => state.generators[generatorId] * 0.06);
+  const totalWaveAmplitude = generatorWaveAmplitudes.reduce((sum, amplitude) => sum + amplitude, 0);
+  const amplitudeNormalizer = Math.max(1, totalWaveAmplitude / 36);
+  const wavePath = (() => {
+    const baseline = WAVE_HEIGHT / 2;
+    let path = '';
+    for (let x = 0; x <= WAVE_WIDTH; x += WAVE_SAMPLE_STEP) {
+      const xRatio = x / WAVE_WIDTH;
+      let y = baseline;
+      for (let index = 0; index < generatorWaveOrder.length; index += 1) {
+        const amplitude = generatorWaveAmplitudes[index] / amplitudeNormalizer;
+        const radians = xRatio * WAVE_FREQUENCIES[index] * Math.PI * 2 + waveTime * WAVE_SPEED;
+        y += Math.sin(radians) * amplitude;
+      }
+      path += `${x === 0 ? 'M' : 'L'}${x},${y.toFixed(2)} `;
+    }
+    return path.trim();
+  })();
 
   return (
     <div className="app">
@@ -257,6 +283,17 @@ function App() {
         <div>DP: {formatNumber(state.dp)}</div>
         <div>Relays: {formatNumber(state.relays)}</div>
         <div>Passive DP/s: {formatNumber(passiveDpPerSecond)}</div>
+      </div>
+
+      <div className="panel wave-panel">
+        <div className="wave-header">
+          <strong>Signal Oscilloscope</strong>
+          <span className="muted">Each owned generator adds amplitude to its frequency band.</span>
+        </div>
+        <svg viewBox={`0 0 ${WAVE_WIDTH} ${WAVE_HEIGHT}`} className="wave-display" role="img" aria-label="Live composite generator wave">
+          <path d={`M0,${WAVE_HEIGHT / 2} H${WAVE_WIDTH}`} className="wave-baseline" />
+          <path d={wavePath} className="wave-line" />
+        </svg>
       </div>
 
       <div className="tabs">
