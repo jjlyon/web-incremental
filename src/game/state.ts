@@ -170,7 +170,19 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
       if (!canPurchaseRelayProtocol(state, action.protocolId)) return state;
       const protocol = RELAY_PROTOCOLS.find((item) => item.id === action.protocolId);
       if (!protocol) return state;
-      return { ...state, relays: state.relays - protocol.cost, relayProtocols: { ...state.relayProtocols, [action.protocolId]: 1 } };
+      const withProtocol = {
+        ...state,
+        relays: state.relays - protocol.cost,
+        relayProtocols: { ...state.relayProtocols, [action.protocolId]: 1 },
+      };
+      if (action.protocolId === 'preloaded_coordinates') {
+        return sanitize({
+          ...withProtocol,
+          signal: withProtocol.signal + 200,
+          totalSignalEarned: withProtocol.totalSignalEarned + 200,
+        });
+      }
+      return withProtocol;
     }
     case 'BUY_RELAY_UPGRADE': {
       if (!canPurchaseRelayUpgrade(state, action.upgradeId)) return state;
