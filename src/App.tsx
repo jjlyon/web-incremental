@@ -113,7 +113,9 @@ function App() {
     const cost = getGeneratorCost(gen.id, owned, 0, state);
     return state.signal >= cost;
   });
-  const hasAffordableUpgrade = UPGRADES.some((up) => canPurchaseUpgrade(state, up.id));
+  const hasAffordableSignalUpgrade = UPGRADES.some((up) => up.currencyType === 'signal' && canPurchaseUpgrade(state, up.id));
+  const hasAffordableRelayUpgrade = UPGRADES.some((up) => up.currencyType === 'relays' && canPurchaseUpgrade(state, up.id));
+  const hasAffordableDpUpgrade = UPGRADES.some((up) => up.currencyType === 'dp' && canPurchaseUpgrade(state, up.id));
   const hasClaimableFinding = MILESTONES.some((m) => !state.milestonesClaimed.includes(m.id) && m.condition(state));
   const canPrestigeNow = canPrestige(state) && prestigeGain > 0;
 
@@ -155,30 +157,33 @@ function App() {
     </div>
   );
 
+  const renderUpgradeRows = (currencies: Array<'signal' | 'dp' | 'relays'>) =>
+    UPGRADES.filter((up) => currencies.includes(up.currencyType)).map((up) => {
+      const level = state.upgrades[up.id];
+      const purchased = !up.repeatable && level > 0;
+      const canBuy = canPurchaseUpgrade(state, up.id);
+      const cost = getUpgradeCost(state, up.id);
+      const hidden = up.prerequisites && !up.prerequisites(state) && level === 0;
+      if (hidden) return null;
+      return (
+        <div className="row" key={up.id}>
+          <div>
+            <strong>{up.name}</strong> [{up.currencyType.toUpperCase()} {formatNumber(cost)}] {up.repeatable ? `(Lv ${level})` : purchased ? '(Owned)' : ''}
+            <div className="muted">{up.description}</div>
+          </div>
+          {!purchased && (
+            <button disabled={!canBuy} onClick={() => dispatch({ type: 'BUY_UPGRADE', upgradeId: up.id })}>
+              Buy
+            </button>
+          )}
+        </div>
+      );
+    });
+
   const renderUpgrades = (title: string, currencies: Array<'signal' | 'dp' | 'relays'>) => (
     <div className="panel">
       <h3>{title}</h3>
-      {UPGRADES.filter((up) => currencies.includes(up.currencyType)).map((up) => {
-        const level = state.upgrades[up.id];
-        const purchased = !up.repeatable && level > 0;
-        const canBuy = canPurchaseUpgrade(state, up.id);
-        const cost = getUpgradeCost(state, up.id);
-        const hidden = up.prerequisites && !up.prerequisites(state) && level === 0;
-        if (hidden) return null;
-        return (
-          <div className="row" key={up.id}>
-            <div>
-              <strong>{up.name}</strong> [{up.currencyType.toUpperCase()} {formatNumber(cost)}] {up.repeatable ? `(Lv ${level})` : purchased ? '(Owned)' : ''}
-              <div className="muted">{up.description}</div>
-            </div>
-            {!purchased && (
-              <button disabled={!canBuy} onClick={() => dispatch({ type: 'BUY_UPGRADE', upgradeId: up.id })}>
-                Buy
-              </button>
-            )}
-          </div>
-        );
-      })}
+      {renderUpgradeRows(currencies)}
     </div>
   );
 
@@ -213,6 +218,8 @@ function App() {
       <p>Unlock condition: claim Correlator Sync finding OR reach 1e12 total signal.</p>
       <p>Projected relays on reset: <strong>{prestigeGain}</strong></p>
       <button disabled={!canPrestigeNow} onClick={() => dispatch({ type: 'PRESTIGE' })}>Initiate Relay Reset</button>
+      <h4>Relay Upgrades</h4>
+      {renderUpgradeRows(['relays'])}
     </div>
   );
 
@@ -256,10 +263,10 @@ function App() {
         {tabs.map((tab) => {
           const hasAttention =
             (tab === 'Generators' && hasAffordableGenerator) ||
-            (tab === 'Upgrades' && hasAffordableUpgrade) ||
-            (tab === 'DP Upgrades' && hasAffordableUpgrade) ||
+            (tab === 'Upgrades' && hasAffordableSignalUpgrade) ||
+            (tab === 'DP Upgrades' && hasAffordableDpUpgrade) ||
             (tab === 'Findings' && hasClaimableFinding) ||
-            (tab === 'Prestige' && canPrestigeNow);
+            (tab === 'Prestige' && (canPrestigeNow || hasAffordableRelayUpgrade));
           return <TabButton key={tab} tab={tab} active={state.currentTab === tab} hasAttention={hasAttention} onClick={(t) => dispatch({ type: 'SET_TAB', tab: t })} />;
         })}
       </div>
@@ -284,7 +291,7 @@ function App() {
       )}
 
       {state.currentTab === 'Generators' && renderGenerators()}
-      {state.currentTab === 'Upgrades' && renderUpgrades('Upgrades', ['signal', 'relays'])}
+      {state.currentTab === 'Upgrades' && renderUpgrades('Upgrades', ['signal'])}
       {state.currentTab === 'DP Upgrades' && renderUpgrades('DP Upgrades', ['dp'])}
       {state.currentTab === 'Findings' && renderFindings()}
       {state.currentTab === 'Prestige' && renderPrestige()}
