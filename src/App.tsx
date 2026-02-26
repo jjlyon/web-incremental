@@ -1,12 +1,32 @@
 import { CSSProperties, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { TabButton } from './components/TabButton';
-import { GENERATORS, MILESTONES, UPGRADES } from './game/data';
-import { canPrestige, canPurchaseUpgrade, formatNumber, getBuyMaxCount, getClickPower, getGeneratorCost, getPassiveDpPerSecond, getPrestigeGain, getTotalSps, getUpgradeCost, runSanityChecks } from './game/economy';
+import { BALANCE, BEACON_UPGRADES, GENERATORS, MILESTONES, RELAY_PROTOCOLS, RELAY_UPGRADES, UPGRADES } from './game/data';
+import {
+  canBeaconReset,
+  canPrestige,
+  canPurchaseBeaconUpgrade,
+  canPurchaseRelayProtocol,
+  canPurchaseRelayUpgrade,
+  canPurchaseUpgrade,
+  formatNumber,
+  getBeaconProjection,
+  getBuyMaxCount,
+  getClickPower,
+  getGeneratorCost,
+  getPassiveDpPerSecond,
+  getPrestigeGain,
+  getRelayEnergyPerRelay,
+  getRelayUpgradeCost,
+  getTotalSps,
+  getUpgradeCost,
+  getBeaconUpgradeCost,
+  runSanityChecks,
+} from './game/economy';
 import { clearSave, exportSave, importSave, loadGame, saveGame } from './game/save';
-import { createInitialState, gameReducer, verifyPrestigeReset } from './game/state';
+import { createInitialState, gameReducer, verifyBeaconReset, verifyPrestigeReset } from './game/state';
 import { GeneratorId, TabName } from './game/types';
 
-const tabs: TabName[] = ['Control', 'Generators', 'Upgrades', 'DP Upgrades', 'Findings', 'Prestige', 'Stats'];
+const tabs: TabName[] = ['Control', 'Generators', 'Upgrades', 'DP Upgrades', 'Findings', 'Relay', 'Beacon', 'Stats'];
 const OFFLINE_TICK_CHUNK_SECONDS = 1;
 const MAX_OFFLINE_SECONDS = 60 * 60;
 const WAVE_WIDTH = 1040;
@@ -17,14 +37,9 @@ const WAVE_FREQUENCIES = [0.45, 0.9, 1.8, 3, 4.8, 7.2];
 const WAVE_COLORS = ['#67f3a1', '#6ad5ff', '#9b8cff', '#c5ff6a', '#ffba6a', '#ff6a9f'];
 const CLICK_MARKER_LIFETIME_SECONDS = 4.8;
 const CLICK_MARKER_SCROLL_PIXELS_PER_SECOND = 210;
-
 const generatorWaveOrder: GeneratorId[] = ['scanner', 'dish', 'sifter', 'probe', 'supercomputer', 'correlator'];
 
-type ClickMarker = {
-  id: number;
-  createdAt: number;
-  amplitude: number;
-};
+type ClickMarker = { id: number; createdAt: number; amplitude: number };
 
 function App() {
   const [state, dispatch] = useReducer(gameReducer, undefined, createInitialState);
@@ -38,63 +53,20 @@ function App() {
 
   const applyOfflineTicks = (elapsedMs: number) => {
     const cappedSeconds = Math.min(MAX_OFFLINE_SECONDS, Math.max(0, elapsedMs / 1000));
-    if (cappedSeconds <= 0) return;
-
     const wholeChunks = Math.floor(cappedSeconds / OFFLINE_TICK_CHUNK_SECONDS);
     const remainder = cappedSeconds - wholeChunks * OFFLINE_TICK_CHUNK_SECONDS;
-
-    for (let i = 0; i < wholeChunks; i += 1) {
-      dispatch({ type: 'TICK', dt: OFFLINE_TICK_CHUNK_SECONDS });
-    }
+    for (let i = 0; i < wholeChunks; i += 1) dispatch({ type: 'TICK', dt: OFFLINE_TICK_CHUNK_SECONDS });
     if (remainder > 0) dispatch({ type: 'TICK', dt: remainder });
   };
 
   useEffect(() => {
     const loaded = loadGame();
     if (!loaded) return;
-
     const now = Date.now();
     dispatch({ type: 'LOAD_STATE', payload: loaded });
     applyOfflineTicks(now - loaded.lastSaveAt);
     dispatch({ type: 'UPDATE_SAVE_TIME', now });
-    inactiveSinceRef.current = null;
     lastTickRef.current = performance.now();
-  }, []);
-
-  useEffect(() => {
-    const resumeFromOffline = () => {
-      const inactiveSince = inactiveSinceRef.current;
-      if (inactiveSince === null) return;
-
-      const now = Date.now();
-      applyOfflineTicks(now - inactiveSince);
-      dispatch({ type: 'UPDATE_SAVE_TIME', now });
-      inactiveSinceRef.current = null;
-      lastTickRef.current = performance.now();
-    };
-
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'hidden' && inactiveSinceRef.current === null) {
-        inactiveSinceRef.current = Date.now();
-        return;
-      }
-      if (document.visibilityState === 'visible') resumeFromOffline();
-    };
-
-    const onBlur = () => {
-      if (inactiveSinceRef.current !== null) return;
-      inactiveSinceRef.current = Date.now();
-    };
-
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    window.addEventListener('focus', resumeFromOffline);
-    window.addEventListener('blur', onBlur);
-
-    return () => {
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-      window.removeEventListener('focus', resumeFromOffline);
-      window.removeEventListener('blur', onBlur);
-    };
   }, []);
 
   useEffect(() => {
@@ -129,195 +101,207 @@ function App() {
     return () => clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    const resume = () => {
+      const since = inactiveSinceRef.current;
+      if (since === null) return;
+      const now = Date.now();
+      applyOfflineTicks(now - since);
+      dispatch({ type: 'UPDATE_SAVE_TIME', now });
+      inactiveSinceRef.current = null;
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden' && inactiveSinceRef.current === null) inactiveSinceRef.current = Date.now();
+      if (document.visibilityState === 'visible') resume();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('blur', () => { if (inactiveSinceRef.current === null) inactiveSinceRef.current = Date.now(); });
+    window.addEventListener('focus', resume);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
+
   const sps = useMemo(() => getTotalSps(state), [state]);
   const clickPower = useMemo(() => getClickPower(state), [state]);
-  const prestigeGain = getPrestigeGain(state);
   const passiveDpPerSecond = getPassiveDpPerSecond(state);
-  const unlockedBuyMax = state.upgrades.unlock_buy_max > 0;
-  const hasAffordableGenerator = GENERATORS.some((gen) => {
-    const owned = state.generators[gen.id];
-    const cost = getGeneratorCost(gen.id, owned, 0, state);
-    return state.signal >= cost;
-  });
+  const relayGain = getPrestigeGain(state);
+  const beaconGain = getBeaconProjection(state);
+  const canPrestigeNow = canPrestige(state) && relayGain > 0;
+  const canBeaconNow = canBeaconReset(state) && beaconGain > 0;
+  const relayEnergyPerRelay = getRelayEnergyPerRelay(state);
+  const relayBaseContribution = state.relays * 2.5 * (1 + state.relayUpgrades.relay_efficiency * 0.05);
+
+  const hasAffordableGenerator = GENERATORS.some((gen) => state.signal >= getGeneratorCost(gen.id, state.generators[gen.id], 0, state));
   const hasAffordableSignalUpgrade = UPGRADES.some((up) => up.currencyType === 'signal' && canPurchaseUpgrade(state, up.id));
-  const hasAffordableRelayUpgrade = UPGRADES.some((up) => up.currencyType === 'relays' && canPurchaseUpgrade(state, up.id));
   const hasAffordableDpUpgrade = UPGRADES.some((up) => up.currencyType === 'dp' && canPurchaseUpgrade(state, up.id));
   const hasClaimableFinding = MILESTONES.some((m) => !state.milestonesClaimed.includes(m.id) && m.condition(state));
-  const canPrestigeNow = canPrestige(state) && prestigeGain > 0;
-
-  const canAffordGeneratorAmount = (generatorId: GeneratorId, amount: number): boolean => {
-    const owned = state.generators[generatorId];
-    let totalCost = 0;
-    for (let offset = 0; offset < amount; offset += 1) {
-      totalCost += getGeneratorCost(generatorId, owned, offset, state);
-      if (totalCost > state.signal) return false;
-    }
-    return true;
-  };
+  const hasAffordableRelayProtocol = RELAY_PROTOCOLS.some((protocol) => canPurchaseRelayProtocol(state, protocol.id));
+  const hasAffordableRelayUpgrade = RELAY_UPGRADES.some((up) => canPurchaseRelayUpgrade(state, up.id));
+  const hasAffordableBeaconUpgrade = BEACON_UPGRADES.some((up) => canPurchaseBeaconUpgrade(state, up.id));
+  const hasRelayLayerUnlocked = state.totalRelaysEarned > 0 || state.relays > 0 || state.relayEnergy > 0 || canPrestige(state) || canPrestigeNow;
+  const hasBeaconLayerUnlocked = state.beacons > 0 || state.networkFragments > 0 || canBeaconReset(state) || canBeaconNow;
 
   const renderGenerators = () => (
     <div className="panel">
-      <h3>Generator Bay</h3>
+      <h3>Generators</h3>
       {GENERATORS.map((gen) => {
         const owned = state.generators[gen.id];
-        const cost = getGeneratorCost(gen.id, owned, 0, state);
-        const contribution = owned * gen.baseSps;
-        const maxCount = getBuyMaxCount(state, gen.id);
+        const desired = state.buyAmount === 'max' ? getBuyMaxCount(state, gen.id) : state.buyAmount;
+        const canBuy = desired > 0 && state.signal >= getGeneratorCost(gen.id, owned, 0, state);
         return (
           <div className="row" key={gen.id}>
             <div>
-              <strong>{gen.name}</strong> — Owned: {owned} | Cost: {formatNumber(cost)} | Base contrib: {formatNumber(contribution)}/s
+              <strong>{gen.name}</strong> ({owned})
+              <div className="muted">Cost: {formatNumber(getGeneratorCost(gen.id, owned, 0, state))} | +{formatNumber(gen.baseSps)} base SPS</div>
             </div>
-            <div className="actions">
-              <button disabled={state.signal < cost} onClick={() => dispatch({ type: 'BUY_GENERATOR', generatorId: gen.id, amount: 1 })}>Buy 1</button>
-              {unlockedBuyMax && (
-                <>
-                  <button disabled={!canAffordGeneratorAmount(gen.id, 10)} onClick={() => dispatch({ type: 'BUY_GENERATOR', generatorId: gen.id, amount: 10 })}>Buy 10</button>
-                  <button disabled={maxCount <= 0} onClick={() => dispatch({ type: 'BUY_GENERATOR', generatorId: gen.id, amount: 'max' })}>Buy Max ({maxCount})</button>
-                </>
-              )}
-            </div>
+            <button disabled={!canBuy} onClick={() => dispatch({ type: 'BUY_GENERATOR', generatorId: gen.id, amount: state.buyAmount })}>Buy {state.buyAmount === 'max' ? 'Max' : state.buyAmount}</button>
           </div>
         );
       })}
     </div>
   );
 
-  const renderUpgradeRows = (currencies: Array<'signal' | 'dp' | 'relays'>) =>
-    UPGRADES.filter((up) => currencies.includes(up.currencyType)).map((up) => {
-      const level = state.upgrades[up.id];
-      const purchased = !up.repeatable && level > 0;
-      const canBuy = canPurchaseUpgrade(state, up.id);
-      const cost = getUpgradeCost(state, up.id);
-      const hidden = up.prerequisites && !up.prerequisites(state) && level === 0;
-      if (hidden) return null;
-      return (
-        <div className="row" key={up.id}>
-          <div>
-            <strong>{up.name}</strong> [{up.currencyType.toUpperCase()} {formatNumber(cost)}] {up.repeatable ? `(Lv ${level})` : purchased ? '(Owned)' : ''}
-            <div className="muted">{up.description}</div>
-          </div>
-          {!purchased && (
-            <button disabled={!canBuy} onClick={() => dispatch({ type: 'BUY_UPGRADE', upgradeId: up.id })}>
-              Buy
-            </button>
-          )}
+  const renderUpgradeRows = (currency: 'signal' | 'dp') => UPGRADES.filter((up) => up.currencyType === currency).map((up) => {
+    const level = state.upgrades[up.id];
+    const purchased = !up.repeatable && level > 0;
+    const hidden = up.prerequisites && !up.prerequisites(state) && level === 0;
+    if (hidden) return null;
+    return (
+      <div className="row" key={up.id}>
+        <div>
+          <strong>{up.name}</strong> [{up.currencyType.toUpperCase()} {formatNumber(getUpgradeCost(state, up.id))}] {up.repeatable ? `(Lv ${level})` : purchased ? '(Owned)' : ''}
+          <div className="muted">{up.description}</div>
         </div>
-      );
-    });
-
-  const renderUpgrades = (title: string, currencies: Array<'signal' | 'dp' | 'relays'>) => (
-    <div className="panel">
-      <h3>{title}</h3>
-      {renderUpgradeRows(currencies)}
-    </div>
-  );
+        {!purchased && <button disabled={!canPurchaseUpgrade(state, up.id)} onClick={() => dispatch({ type: 'BUY_UPGRADE', upgradeId: up.id })}>Buy</button>}
+      </div>
+    );
+  });
 
   const renderFindings = () => (
     <div className="panel">
       <h3>Findings & Discovery Points</h3>
       <p className="muted">Passive DP gain: {formatNumber(passiveDpPerSecond)}/s</p>
-      <label>
-        <input type="checkbox" checked={state.autoClaimFindings} onChange={() => dispatch({ type: 'TOGGLE_AUTO_CLAIM' })} /> Auto-claim findings
-      </label>
+      <label><input type="checkbox" checked={state.autoClaimFindings} onChange={() => dispatch({ type: 'TOGGLE_AUTO_CLAIM' })} /> Auto-claim findings</label>
       {MILESTONES.map((m) => {
         const claimed = state.milestonesClaimed.includes(m.id);
         const met = m.condition(state);
-        return (
-          <div className="row" key={m.id}>
-            <div>
-              <strong>{m.name}</strong> (+{m.dpReward} DP)
-              <div className="muted">{m.description}</div>
-            </div>
-            <button disabled={claimed || !met} onClick={() => dispatch({ type: 'CLAIM_MILESTONE', milestoneId: m.id })}>
-              {claimed ? 'Claimed' : met ? 'Claim' : 'Locked'}
-            </button>
-          </div>
-        );
+        return <div className="row" key={m.id}><div><strong>{m.name}</strong> (+{m.dpReward} DP)<div className="muted">{m.description}</div></div><button disabled={claimed || !met} onClick={() => dispatch({ type: 'CLAIM_MILESTONE', milestoneId: m.id })}>{claimed ? 'Claimed' : met ? 'Claim' : 'Locked'}</button></div>;
       })}
     </div>
   );
 
-  const renderPrestige = () => (
-    <div className="panel">
-      <h3>Relay Uplink (Prestige)</h3>
-      <p>Unlock condition: claim Correlator Sync finding OR reach 1e12 total signal.</p>
-      <p>Projected relays on reset: <strong>{prestigeGain}</strong></p>
-      <button disabled={!canPrestigeNow} onClick={() => dispatch({ type: 'PRESTIGE' })}>Initiate Relay Reset</button>
-      <h4>Relay Upgrades</h4>
-      {renderUpgradeRows(['relays'])}
+  const renderRelay = () => (
+    <div className="meta-grid">
+      <div className="panel">
+        <h3>Relay Uplink</h3>
+        <p className="muted">Keeps: DP, Relays, Relay Energy, Relay Protocols, Relay Upgrades. Resets: signal, generators, signal upgrades.</p>
+        <p>Projection if reset now: <strong>+{formatNumber(relayGain)} Relays</strong> and <strong>+{formatNumber((state.relays + relayGain) * relayEnergyPerRelay)} Relay Energy</strong>.</p>
+        <p className="muted">Current relay contribution: +{formatNumber(relayBaseContribution)}% global production.</p>
+        <p className="muted">Relay Energy per unspent Relay: {formatNumber(relayEnergyPerRelay)} (applies to current unspent relays + newly gained relays each reset).</p>
+        <button disabled={!canPrestigeNow} onClick={() => dispatch({ type: 'PRESTIGE' })}>Initiate Relay Reset</button>
+      </div>
+
+      <div className="panel">
+        <h3>Signal Protocols</h3>
+        <p className="meta-subtitle">Relays: {formatNumber(state.relays)} (Protocols cost Relays)</p>
+        {RELAY_PROTOCOLS.map((protocol) => (
+          <div className="row" key={protocol.id}>
+            <div>
+              <strong>{protocol.name}</strong> [RELAYS {protocol.cost}] {state.relayProtocols[protocol.id] > 0 ? '(Installed)' : ''}
+              <div className="muted">{protocol.description}</div>
+              <div className="muted">{protocol.id === 'accelerated_sampling' ? 'Current: +15% click power.' : protocol.id === 'relay_synchronization' ? 'Current: +5% generator production.' : protocol.id === 'boot_sequence_cache' ? 'Current: +1 starting scanner.' : protocol.id === 'preloaded_coordinates' ? 'Current: +200 starting signal.' : 'Current: Automation upgrades persist on Relay reset.'}</div>
+            </div>
+            {state.relayProtocols[protocol.id] === 0 && <button disabled={!canPurchaseRelayProtocol(state, protocol.id)} onClick={() => dispatch({ type: 'BUY_RELAY_PROTOCOL', protocolId: protocol.id })}>Install</button>}
+          </div>
+        ))}
+      </div>
+
+      <div className="panel meta-panel-full">
+        <h3>Relay Upgrades</h3>
+        <p className="meta-subtitle">Relay Energy: {formatNumber(state.relayEnergy)} (Upgrades cost Relay Energy) | Total Relays Earned: {formatNumber(state.totalRelaysEarned)}</p>
+        {[1, 2, 3].map((tier) => (
+          <div key={`tier-${tier}`} className="tier-group">
+            <div className="tier-heading">Tier {tier} {tier === 1 ? '(0+)' : tier === 2 ? '(5+ total relays)' : '(15+ total relays)'}</div>
+            {RELAY_UPGRADES.filter((up) => up.tier === tier).map((up) => {
+              const locked = state.totalRelaysEarned < up.unlockAtRelays;
+              const level = state.relayUpgrades[up.id];
+              const cost = getRelayUpgradeCost(state, up.id);
+              const owned = !up.repeatable && level > 0;
+              return (
+                <div className="row" key={up.id}>
+                  <div>
+                    <strong>{up.name}</strong> [ENERGY {formatNumber(cost)}] {up.repeatable ? `(Lv ${level})` : owned ? '(Owned)' : ''}
+                    <div className="muted">{up.description}</div>
+                    <div className="muted">{up.id === 'relay_efficiency' ? `Current relay effect scaling: +${formatNumber(level * 5)}%` : up.id === 'lean_procurement' ? 'Current: scanners/dishes cost x0.90.' : up.id === 'finding_archive' ? 'Current: findings grant x1.25 DP.' : up.id === 'spectral_refinement' ? 'Current: noise scaling x0.88.' : up.id === 'autonomous_scanners' ? 'Current: +1.5 auto scans/sec.' : up.id === 'resonant_interface' ? 'Current: manual scans gain +2% SPS.' : 'Current: +1 starting Dish Array.'}</div>
+                  </div>
+                  <button disabled={locked || owned || !canPurchaseRelayUpgrade(state, up.id)} onClick={() => dispatch({ type: 'BUY_RELAY_UPGRADE', upgradeId: up.id })}>{locked ? `Unlocks at ${up.unlockAtRelays}` : 'Buy'}</button>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const renderBeacon = () => (
+    <div className="meta-grid">
+      <div className="panel">
+        <h3>Beacon Network</h3>
+        <p className="muted">Unlock at {BALANCE.beaconUnlockRelays} total relays or {BALANCE.beaconUnlockSignal.toExponential(0)} total signal.</p>
+        <p className="muted">Keeps: Beacons, Fragments, Beacon upgrades, findings. Resets: Signal, DP, Relays, Relay Energy, Relay Protocols/Upgrades.</p>
+        <p>Projection if reset now: <strong>+{formatNumber(beaconGain)} Network Fragments</strong>.</p>
+        <button disabled={!canBeaconNow} onClick={() => dispatch({ type: 'BEACON_RESET' })}>Initialize Beacon Reset</button>
+      </div>
+
+      <div className="panel meta-panel-full">
+        <h3>Beacon Upgrades</h3>
+        <p className="meta-subtitle">Network Fragments: {formatNumber(state.networkFragments)} | Beacons: {formatNumber(state.beacons)}</p>
+        {BEACON_UPGRADES.map((up) => {
+          const level = state.beaconUpgrades[up.id];
+          const cost = getBeaconUpgradeCost(state, up.id);
+          const owned = !up.repeatable && level > 0;
+          return (
+            <div className="row" key={up.id}>
+              <div>
+                <strong>{up.name}</strong> [FRAGMENTS {formatNumber(cost)}] {up.repeatable ? `(Lv ${level})` : owned ? '(Owned)' : ''}
+                <div className="muted">{up.description}</div>
+                <div className="muted">{up.id === 'signal_echo' ? `Current: early generator costs x${formatNumber(Math.pow(0.94, level))}.` : up.id === 'archive_persistence' ? `Current: +${formatNumber(level * 0.12)} passive DP/s.` : up.id === 'network_memory' ? `Current: each new Relay grants +${formatNumber(1 + level)} Relay Energy.` : `Current: relay-upgrade costs x${formatNumber(Math.pow(0.92, level))}.`}</div>
+              </div>
+              <button disabled={owned || !canPurchaseBeaconUpgrade(state, up.id)} onClick={() => dispatch({ type: 'BUY_BEACON_UPGRADE', upgradeId: up.id })}>Buy</button>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 
   const handleManualScan = () => {
     const now = performance.now() / 1000;
-    const clickAmplitude = Math.min(WAVE_HEIGHT * 0.42, 4 + Math.log10(clickPower + 1) * 7);
-    setClickMarkers((markers) => [
-      ...markers,
-      {
-        id: clickMarkerIdRef.current++,
-        createdAt: now,
-        amplitude: clickAmplitude,
-      },
-    ]);
+    setClickMarkers((markers) => [...markers, { id: clickMarkerIdRef.current++, createdAt: now, amplitude: Math.min(WAVE_HEIGHT * 0.42, 4 + Math.log10(clickPower + 1) * 7) }]);
     dispatch({ type: 'MANUAL_SCAN' });
-  };
-
-  const runManualSave = () => {
-    saveGame(state);
-    dispatch({ type: 'UPDATE_SAVE_TIME', now: Date.now() });
-  };
-
-  const handleImport = () => {
-    const imported = importSave(importText);
-    if (!imported) {
-      alert('Invalid save JSON');
-      return;
-    }
-    dispatch({ type: 'LOAD_STATE', payload: imported });
-    saveGame(imported);
-  };
-
-  const hardReset = () => {
-    if (!window.confirm('Hard reset everything? This cannot be undone.')) return;
-    clearSave();
-    dispatch({ type: 'HARD_RESET' });
   };
 
   const sanityIssues = runSanityChecks(state);
   const waveTime = performance.now() / 1000;
   const rawAmplitudes = generatorWaveOrder.map((generatorId) => state.generators[generatorId] * 0.6);
-  const largestAmplitude = Math.max(1, ...rawAmplitudes);
-  const amplitudeNormalizer = Math.max(1, largestAmplitude / 26);
-  const generatorWaveData = generatorWaveOrder.map((generatorId, index) => {
+  const amplitudeNormalizer = Math.max(1, Math.max(1, ...rawAmplitudes) / 26);
+  const visibleGeneratorWaves = generatorWaveOrder.map((generatorId, index) => {
     const amplitude = rawAmplitudes[index] / amplitudeNormalizer;
-    const generatorName = GENERATORS.find((generator) => generator.id === generatorId)?.name ?? generatorId;
     let path = '';
     for (let x = 0; x <= WAVE_WIDTH; x += WAVE_SAMPLE_STEP) {
-      const xRatio = x / WAVE_WIDTH;
-      const radians = xRatio * WAVE_FREQUENCIES[index] * Math.PI * 2 + waveTime * WAVE_SPEED;
-      const y = WAVE_HEIGHT / 2 + Math.sin(radians) * amplitude;
+      const y = WAVE_HEIGHT / 2 + Math.sin((x / WAVE_WIDTH) * WAVE_FREQUENCIES[index] * Math.PI * 2 + waveTime * WAVE_SPEED) * amplitude;
       path += `${x === 0 ? 'M' : 'L'}${x},${y.toFixed(2)} `;
     }
-    return {
-      generatorId,
-      generatorName,
-      color: WAVE_COLORS[index],
-      owned: state.generators[generatorId],
-      path: path.trim(),
-      isUnlocked: state.generators[generatorId] > 0,
-    };
-  });
-  const visibleGeneratorWaves = generatorWaveData.filter((wave) => wave.isUnlocked);
+    return { generatorId, generatorName: GENERATORS.find((g) => g.id === generatorId)?.name ?? generatorId, color: WAVE_COLORS[index], owned: state.generators[generatorId], path: path.trim(), isUnlocked: state.generators[generatorId] > 0 };
+  }).filter((wave) => wave.isUnlocked);
+
   const scannerFrequency = WAVE_FREQUENCIES[0];
   const visibleClickMarkers = clickMarkers
     .map((marker) => {
       const markerAge = waveTime - marker.createdAt;
       const x = WAVE_WIDTH - markerAge * CLICK_MARKER_SCROLL_PIXELS_PER_SECOND;
       if (x < -8 || x > WAVE_WIDTH + 8 || markerAge < 0) return null;
-      const xRatio = x / WAVE_WIDTH;
-      const radians = xRatio * scannerFrequency * Math.PI * 2 + waveTime * WAVE_SPEED;
-      const y = WAVE_HEIGHT / 2 + Math.sin(radians) * marker.amplitude;
+      const y = WAVE_HEIGHT / 2 + Math.sin((x / WAVE_WIDTH) * scannerFrequency * Math.PI * 2 + waveTime * WAVE_SPEED) * marker.amplitude;
       return { id: marker.id, x, y };
     })
     .filter((marker): marker is { id: number; x: number; y: number } => marker !== null);
@@ -326,101 +310,44 @@ function App() {
     <div className="app">
       <h1>Signal & Salvage</h1>
       <div className="panel statsline">
-        <div>Signal: {formatNumber(state.signal)}</div>
-        <div>Signal/s: {formatNumber(sps)}</div>
-        <div>Click Power: {formatNumber(clickPower)}</div>
-        <div>Noise: {formatNumber(state.noise)}</div>
-        <div>DP: {formatNumber(state.dp)}</div>
-        <div>Relays: {formatNumber(state.relays)}</div>
-        <div>Passive DP/s: {formatNumber(passiveDpPerSecond)}</div>
+        <div>Signal: {formatNumber(state.signal)}</div><div>Signal/s: {formatNumber(sps)}</div><div>Click Power: {formatNumber(clickPower)}</div>
+        <div>Noise: {formatNumber(state.noise)}</div><div>DP: {formatNumber(state.dp)}</div>
+        {hasRelayLayerUnlocked && <div>Relays: {formatNumber(state.relays)}</div>}
+        {hasRelayLayerUnlocked && <div>Relay Energy: {formatNumber(state.relayEnergy)}</div>}
+        {hasBeaconLayerUnlocked && <div>Fragments: {formatNumber(state.networkFragments)}</div>}
+        {hasBeaconLayerUnlocked && <div>Beacons: {formatNumber(state.beacons)}</div>}
       </div>
 
       <div className="panel wave-panel">
-        <div className="wave-header">
-          <strong>Signal Oscilloscope</strong>
-          <span className="muted">Unlocked generators render individual sinewaves; prestige-locked tiers stay hidden until repurchased.</span>
-        </div>
-        <svg viewBox={`0 0 ${WAVE_WIDTH} ${WAVE_HEIGHT}`} className="wave-display" role="img" aria-label="Live generator sinewaves">
-          <path d={`M0,${WAVE_HEIGHT / 2} H${WAVE_WIDTH}`} className="wave-baseline" />
-          {visibleGeneratorWaves.map((wave) => (
-            <path
-              key={wave.generatorId}
-              d={wave.path}
-              className="wave-line"
-              style={{ stroke: wave.color, opacity: 0.95 }}
-            />
-          ))}
-          {visibleClickMarkers.map((marker) => (
-            <circle key={`click-${marker.id}`} cx={marker.x.toFixed(2)} cy={marker.y.toFixed(2)} r={2.8} className="wave-click-marker" />
-          ))}
-        </svg>
-        <div className="wave-legend">
-          {visibleGeneratorWaves.length > 0 ? visibleGeneratorWaves.map((wave) => (
-            <span key={`${wave.generatorId}-legend`} className="wave-legend-item" style={{ '--wave-color': wave.color } as CSSProperties}>
-              {wave.generatorName}: {wave.owned}
-            </span>
-          )) : <span className="muted">No unlocked generators yet.</span>}
-        </div>
+        <div className="wave-header"><strong>Signal Oscilloscope</strong><span className="muted">Unlocked generators render individual sinewaves.</span></div>
+        <svg viewBox={`0 0 ${WAVE_WIDTH} ${WAVE_HEIGHT}`} className="wave-display" role="img" aria-label="Live generator sinewaves"><path d={`M0,${WAVE_HEIGHT / 2} H${WAVE_WIDTH}`} className="wave-baseline" />{visibleGeneratorWaves.map((wave) => <path key={wave.generatorId} d={wave.path} className="wave-line" style={{ stroke: wave.color, opacity: 0.95 }} />)}{visibleClickMarkers.map((marker) => <circle key={`click-${marker.id}`} cx={marker.x.toFixed(2)} cy={marker.y.toFixed(2)} r={2.8} className="wave-click-marker" />)}</svg>
+        <div className="wave-legend">{visibleGeneratorWaves.length > 0 ? visibleGeneratorWaves.map((wave) => <span key={`${wave.generatorId}-legend`} className="wave-legend-item" style={{ '--wave-color': wave.color } as CSSProperties}>{wave.generatorName}: {wave.owned}</span>) : <span className="muted">No unlocked generators yet.</span>}</div>
       </div>
 
-      <div className="tabs">
-        {tabs.map((tab) => {
-          const hasAttention =
-            (tab === 'Generators' && hasAffordableGenerator) ||
-            (tab === 'Upgrades' && hasAffordableSignalUpgrade) ||
-            (tab === 'DP Upgrades' && hasAffordableDpUpgrade) ||
-            (tab === 'Findings' && hasClaimableFinding) ||
-            (tab === 'Prestige' && (canPrestigeNow || hasAffordableRelayUpgrade));
-          return <TabButton key={tab} tab={tab} active={state.currentTab === tab} hasAttention={hasAttention} onClick={(t) => dispatch({ type: 'SET_TAB', tab: t })} />;
-        })}
-      </div>
+      <div className="tabs">{tabs.filter((tab) => tab !== 'Beacon' || hasBeaconLayerUnlocked).map((tab) => {
+        const hasAttention =
+          (tab === 'Generators' && hasAffordableGenerator) ||
+          (tab === 'Upgrades' && hasAffordableSignalUpgrade) ||
+          (tab === 'DP Upgrades' && hasAffordableDpUpgrade) ||
+          (tab === 'Findings' && hasClaimableFinding) ||
+          (tab === 'Relay' && (canPrestigeNow || hasAffordableRelayProtocol || hasAffordableRelayUpgrade)) ||
+          (tab === 'Beacon' && (canBeaconNow || hasAffordableBeaconUpgrade));
+        return <TabButton key={tab} tab={tab} active={state.currentTab === tab} hasAttention={hasAttention} onClick={(t) => dispatch({ type: 'SET_TAB', tab: t })} />;
+      })}</div>
 
-      {state.currentTab === 'Control' && (
-        <div className="panel">
-          <h3>Control Console</h3>
-          <button className="big" onClick={handleManualScan}>Manual Scan +{formatNumber(clickPower)} Signal</button>
-          <p className="muted">Use scans to bootstrap, then lean on passive production. Noise rises with infrastructure and dampens output.</p>
-          <label>
-            <input type="checkbox" checked={state.autoBuyEnabled} onChange={() => dispatch({ type: 'TOGGLE_AUTO_BUY' })} disabled={!unlockedBuyMax} /> Auto-Buy Generators (requires Batch Procurement)
-          </label>
-          {unlockedBuyMax && (
-            <div>
-              Preferred buy amount:
-              {[1, 10, 'max'].map((amt) => (
-                <button key={amt} onClick={() => dispatch({ type: 'SET_BUY_AMOUNT', amount: amt as 1 | 10 | 'max' })}>{amt}</button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
+      {state.currentTab === 'Control' && <div className="panel"><h3>Control Console</h3><button className="big" onClick={handleManualScan}>Manual Scan +{formatNumber(clickPower)} Signal</button><p className="muted">Run loop: Signal → DP → Relays → Beacons.</p></div>}
       {state.currentTab === 'Generators' && renderGenerators()}
-      {state.currentTab === 'Upgrades' && renderUpgrades('Upgrades', ['signal'])}
-      {state.currentTab === 'DP Upgrades' && renderUpgrades('DP Upgrades', ['dp'])}
+      {state.currentTab === 'Upgrades' && <div className="panel"><h3>Signal Upgrades</h3>{renderUpgradeRows('signal')}</div>}
+      {state.currentTab === 'DP Upgrades' && <div className="panel"><h3>DP Upgrades</h3>{renderUpgradeRows('dp')}</div>}
       {state.currentTab === 'Findings' && renderFindings()}
-      {state.currentTab === 'Prestige' && renderPrestige()}
+      {state.currentTab === 'Relay' && renderRelay()}
+      {state.currentTab === 'Beacon' && hasBeaconLayerUnlocked && renderBeacon()}
       {state.currentTab === 'Stats' && (
-        <div className="panel">
-          <h3>Stats & Save Tools</h3>
-          <div>Total Signal Earned: {formatNumber(state.totalSignalEarned)}</div>
-          <div>Session Length: {Math.floor((Date.now() - state.startedAt) / 1000)} sec</div>
-          <div>Last Save: {new Date(state.lastSaveAt).toLocaleTimeString()}</div>
-          <div className="actions">
-            <button onClick={runManualSave}>Manual Save</button>
-            <button onClick={hardReset}>Hard Reset</button>
-          </div>
-          <div>
-            <button onClick={() => setExportText(exportSave(state))}>Export Save</button>
-            <textarea value={exportText} onChange={(e) => setExportText(e.target.value)} rows={3} />
-          </div>
-          <div>
-            <button onClick={handleImport}>Import Save</button>
-            <textarea value={importText} onChange={(e) => setImportText(e.target.value)} rows={3} placeholder="Paste save JSON" />
-          </div>
-          <div>
-            Prestige reset sanity: {verifyPrestigeReset(state) ? 'OK' : 'Check failed'}
-            {sanityIssues.length > 0 && <pre>{sanityIssues.join('\n')}</pre>}
-          </div>
+        <div className="panel"><h3>Stats & Save Tools</h3><div>Total Signal Earned: {formatNumber(state.totalSignalEarned)}</div><div>Last Save: {new Date(state.lastSaveAt).toLocaleTimeString()}</div>
+          <div className="actions"><button onClick={() => { saveGame(state); dispatch({ type: 'UPDATE_SAVE_TIME', now: Date.now() }); }}>Manual Save</button><button onClick={() => { clearSave(); dispatch({ type: 'HARD_RESET' }); }}>Hard Reset</button></div>
+          <div><button onClick={() => setExportText(exportSave(state))}>Export Save</button><textarea value={exportText} onChange={(e) => setExportText(e.target.value)} rows={3} /></div>
+          <div><button onClick={() => { const imported = importSave(importText); if (!imported) return alert('Invalid save JSON'); dispatch({ type: 'LOAD_STATE', payload: imported }); saveGame(imported); }}>Import Save</button><textarea value={importText} onChange={(e) => setImportText(e.target.value)} rows={3} /></div>
+          <div>Prestige reset sanity: {verifyPrestigeReset(state) ? 'OK' : 'Check failed'} | Beacon reset sanity: {verifyBeaconReset(state) ? 'OK' : 'Check failed'}{sanityIssues.length > 0 && <pre>{sanityIssues.join('\n')}</pre>}</div>
         </div>
       )}
     </div>
