@@ -152,6 +152,13 @@ function App() {
   const canBeaconNow = canBeaconReset(state) && beaconGain > 0;
   const relayEnergyPerRelay = getRelayEnergyPerRelay(state);
   const relayBaseContribution = state.relays * 2.5 * (1 + state.relayUpgrades.relay_efficiency * 0.05);
+  const baseNoisePenalty = 1 / (1 + state.noise / 100);
+  const noiseMitigation = state.upgrades.adaptive_gain_control > 0 ? 0.4 : 0;
+  const effectiveNoiseFactor = 1 - (1 - baseNoisePenalty) * (1 - noiseMitigation);
+  const clampedNoiseFactor = Math.max(0.05, effectiveNoiseFactor);
+  const undampenedSps = sps / clampedNoiseFactor;
+  const spsLostToNoise = Math.max(0, undampenedSps - sps);
+  const noiseImpactPercent = (1 - clampedNoiseFactor) * 100;
 
   const hasAffordableGenerator = GENERATORS.some((gen) => state.signal >= getGeneratorCost(gen.id, state.generators[gen.id], 0, state));
   const hasAffordableSignalUpgrade = UPGRADES.some((up) => up.currencyType === 'signal' && canPurchaseUpgrade(state, up.id));
@@ -363,6 +370,33 @@ function App() {
         {hasRelayLayerUnlocked && <div>Relay Energy: {formatNumber(state.relayEnergy)}</div>}
         {hasBeaconLayerUnlocked && <div>Fragments: {formatNumber(state.networkFragments)}</div>}
         {hasBeaconLayerUnlocked && <div>Beacons: {formatNumber(state.beacons)}</div>}
+      </div>
+
+      <div className="panel noise-panel">
+        <div className="wave-header"><strong>Noise Interference Map</strong><span className="muted">How much ambient noise is suppressing your effective output right now.</span></div>
+        <div className="noise-grid">
+          <div>
+            <div className="noise-meter-track">
+              <div className="noise-meter-safe" style={{ width: `${Math.max(0, Math.min(100, clampedNoiseFactor * 100)).toFixed(1)}%` }} />
+              <div className="noise-meter-loss" style={{ width: `${Math.max(0, Math.min(100, noiseImpactPercent)).toFixed(1)}%` }} />
+            </div>
+            <div className="noise-stats muted">
+              <span>Efficiency: {formatNumber(clampedNoiseFactor * 100)}%</span>
+              <span>Suppression: {formatNumber(noiseImpactPercent)}%</span>
+              <span>Lost SPS: {formatNumber(spsLostToNoise)}</span>
+            </div>
+          </div>
+          <svg viewBox="0 0 360 84" className="noise-spark" role="img" aria-label="Noise damping visualization">
+            {Array.from({ length: 36 }, (_, i) => {
+              const x = i * 10;
+              const envelope = (0.35 + (state.noise / 100)) * (1 - clampedNoiseFactor);
+              const height = 8 + (Math.sin((i + waveTime * 8) * 0.8) + 1) * 18 * Math.min(1.4, envelope + 0.15);
+              return <rect key={`noise-bar-${i}`} x={x} y={84 - height} width={7} height={height} rx={1.5} className="noise-bar" />;
+            })}
+            <line x1="0" y1="42" x2="360" y2="42" className="noise-midline" />
+          </svg>
+        </div>
+        <div className="muted">Projected clean SPS without current noise: {formatNumber(undampenedSps)} (current: {formatNumber(sps)}).</div>
       </div>
 
       <div className="panel wave-panel">
