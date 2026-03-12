@@ -371,9 +371,9 @@ function App() {
         <div className="wave-header"><strong>Signal Oscilloscope</strong><span className="muted">Wave amplitude is based on each generator's actual SPS contribution.</span></div>
         <div className="wave-body">
           <div className="wave-scale" aria-hidden="true">
-            <span>{formatNumber(maxContributionSps)} SPS</span>
-            <span>{formatNumber(maxContributionSps / 2)} SPS</span>
+            <span>+{formatNumber(maxContributionSps)} SPS</span>
             <span>0 SPS</span>
+            <span>-{formatNumber(maxContributionSps)} SPS</span>
           </div>
           <svg viewBox={`0 0 ${WAVE_WIDTH} ${WAVE_HEIGHT}`} className="wave-display" role="img" aria-label="Live generator sinewaves"><path d={`M0,${WAVE_HEIGHT / 2} H${WAVE_WIDTH}`} className="wave-baseline" />{visibleGeneratorWaves.map((wave) => <path key={wave.generatorId} d={wave.path} className="wave-line" style={{ stroke: wave.color, opacity: 0.95 }} />)}{visibleClickMarkers.map((marker) => <circle key={`click-${marker.id}`} cx={marker.x.toFixed(2)} cy={marker.y.toFixed(2)} r={2.8} className="wave-click-marker" />)}</svg>
         </div>
