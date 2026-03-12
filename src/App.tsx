@@ -320,13 +320,11 @@ function App() {
     return owned * def.baseSps * getGeneratorMultiplier(state, generatorId) * globalWaveMultiplier;
   });
   const maxContributionSps = Math.max(1, ...generatorContributions);
-  const transformedContributions = generatorContributions.map((spsValue) => Math.log10(spsValue + 1));
-  const maxTransformedContribution = Math.max(1, ...transformedContributions);
+  const MAX_WAVE_AMPLITUDE = 30;
 
   const visibleGeneratorWaves = generatorWaveOrder.map((generatorId, index) => {
     const contributionSps = generatorContributions[index];
-    const transformed = transformedContributions[index];
-    const amplitude = contributionSps > 0 ? Math.max(2, (transformed / maxTransformedContribution) * 26) : 0;
+    const amplitude = contributionSps > 0 ? (contributionSps / maxContributionSps) * MAX_WAVE_AMPLITUDE : 0;
     let path = '';
     for (let x = 0; x <= WAVE_WIDTH; x += WAVE_SAMPLE_STEP) {
       const y = WAVE_HEIGHT / 2 + Math.sin((x / WAVE_WIDTH) * WAVE_FREQUENCIES[index] * Math.PI * 2 + waveTime * WAVE_SPEED) * amplitude;
@@ -368,7 +366,7 @@ function App() {
       </div>
 
       <div className="panel wave-panel">
-        <div className="wave-header"><strong>Signal Oscilloscope</strong><span className="muted">Wave amplitude is based on each generator's actual SPS contribution.</span></div>
+        <div className="wave-header"><strong>Signal Oscilloscope</strong><span className="muted">Wave amplitudes are linear-relative to the highest current generator SPS contribution.</span></div>
         <div className="wave-body">
           <div className="wave-scale" aria-hidden="true">
             <span>+{formatNumber(maxContributionSps)} SPS</span>
