@@ -193,7 +193,7 @@ function App() {
     <div className="meta-grid">
       <div className="panel">
         <h3>Relay Uplink</h3>
-        <p className="muted">Keeps: DP, Relays, Relay Energy, Relay Protocols, Relay Upgrades. Resets: signal, generators, signal upgrades.</p>
+        <p className="muted">Keeps: DP, DP upgrades, Relays, Relay Energy, Relay Protocols, Relay Upgrades. Resets: signal, generators, signal upgrades.</p>
         <p>Projection if reset now: <strong>+{formatNumber(relayGain)} Relays</strong> and <strong>+{formatNumber((state.relays + relayGain) * relayEnergyPerRelay)} Relay Energy</strong>.</p>
         <p className="muted">Current relay contribution: +{formatNumber(relayBaseContribution)}% global production.</p>
         <p className="muted">Relay Energy per unspent Relay: {formatNumber(relayEnergyPerRelay)} (applies to current unspent relays + newly gained relays each reset).</p>

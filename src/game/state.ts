@@ -121,6 +121,9 @@ const applyPrestigeReset = (state: GameState): GameState => {
   next.relayUpgrades = { ...state.relayUpgrades };
   next.milestonesClaimed = [...state.milestonesClaimed];
 
+  const keepDpUpgrades: UpgradeId[] = ['cataloged_patterns', 'signal_mapping', 'passive_research', 'probe_blueprints'];
+  for (const id of keepDpUpgrades) next.upgrades[id] = state.upgrades[id];
+
   if (keepAutomation) {
     next.upgrades.unlock_buy_max = state.upgrades.unlock_buy_max;
     next.upgrades.auto_scan_daemon_1 = state.upgrades.auto_scan_daemon_1;
