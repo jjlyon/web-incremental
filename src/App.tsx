@@ -160,13 +160,15 @@ function App() {
   const hasAffordableBeaconUpgrade = BEACON_UPGRADES.some((up) => canPurchaseBeaconUpgrade(state, up.id));
   const hasRelayLayerUnlocked = state.totalRelaysEarned > 0 || state.relays > 0 || state.relayEnergy > 0 || canPrestige(state) || canPrestigeNow;
   const hasBeaconLayerUnlocked = state.beacons > 0 || state.networkFragments > 0 || canBeaconReset(state) || canBeaconNow;
+  const unlockedBuyMax = state.upgrades.unlock_buy_max > 0;
 
   const renderGenerators = () => (
     <div className="panel">
       <h3>Generators</h3>
       {GENERATORS.map((gen) => {
         const owned = state.generators[gen.id];
-        const desired = state.buyAmount === 'max' ? getBuyMaxCount(state, gen.id) : state.buyAmount;
+        const effectiveBuyAmount = !unlockedBuyMax && state.buyAmount !== 1 ? 1 : state.buyAmount;
+        const desired = effectiveBuyAmount === 'max' ? getBuyMaxCount(state, gen.id) : effectiveBuyAmount;
         const canBuy = desired > 0 && state.signal >= getGeneratorCost(gen.id, owned, 0, state);
         return (
           <div className="row" key={gen.id}>
@@ -174,7 +176,7 @@ function App() {
               <strong>{gen.name}</strong> ({owned})
               <div className="muted">Cost: {formatNumber(getGeneratorCost(gen.id, owned, 0, state))} | +{formatNumber(gen.baseSps)} base SPS</div>
             </div>
-            <button disabled={!canBuy} onClick={() => dispatch({ type: 'BUY_GENERATOR', generatorId: gen.id, amount: state.buyAmount })}>Buy {state.buyAmount === 'max' ? 'Max' : state.buyAmount}</button>
+            <button disabled={!canBuy} onClick={() => dispatch({ type: 'BUY_GENERATOR', generatorId: gen.id, amount: effectiveBuyAmount })}>Buy {effectiveBuyAmount === 'max' ? 'Max' : effectiveBuyAmount}</button>
           </div>
         );
       })}
@@ -356,7 +358,30 @@ function App() {
         return <TabButton key={tab} tab={tab} active={state.currentTab === tab} hasAttention={hasAttention} onClick={(t) => dispatch({ type: 'SET_TAB', tab: t })} />;
       })}</div>
 
-      {state.currentTab === 'Control' && <div className="panel"><h3>Control Console</h3><button className="big" onClick={handleManualScan}>Manual Scan +{formatNumber(clickPower)} Signal</button><p className="muted">Run loop: Signal → DP → Relays → Beacons.</p></div>}
+      {state.currentTab === 'Control' && (
+        <div className="panel">
+          <h3>Control Console</h3>
+          <button className="big" onClick={handleManualScan}>Manual Scan +{formatNumber(clickPower)} Signal</button>
+          <p className="muted">Run loop: Signal → DP → Relays → Beacons.</p>
+          <label>
+            <input
+              type="checkbox"
+              checked={state.autoBuyEnabled}
+              onChange={() => dispatch({ type: 'TOGGLE_AUTO_BUY' })}
+              disabled={!unlockedBuyMax}
+            />
+            {' '}Auto-Buy Generators (requires Batch Procurement)
+          </label>
+          {unlockedBuyMax && (
+            <div>
+              Preferred buy amount:
+              {[1, 10, 'max'].map((amt) => (
+                <button key={amt} onClick={() => dispatch({ type: 'SET_BUY_AMOUNT', amount: amt as 1 | 10 | 'max' })}>{amt}</button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {state.currentTab === 'Generators' && renderGenerators()}
       {state.currentTab === 'Upgrades' && <div className="panel"><h3>Signal Upgrades</h3>{renderUpgradeRows('signal')}</div>}
       {state.currentTab === 'DP Upgrades' && <div className="panel"><h3>DP Upgrades</h3>{renderUpgradeRows('dp')}</div>}
