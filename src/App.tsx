@@ -13,6 +13,7 @@ import {
   getBuyMaxCount,
   getClickPower,
   getGeneratorCost,
+  getAutoScanRate,
   getPassiveDpPerSecond,
   getPrestigeGain,
   getRelayEnergyPerRelay,
@@ -50,6 +51,7 @@ function App() {
   const stateRef = useRef(state);
   const clickMarkerIdRef = useRef(0);
   const inactiveSinceRef = useRef<number | null>(null);
+  const autoScanCarryRef = useRef(0);
 
   const applyOfflineTicks = (elapsedMs: number) => {
     const cappedSeconds = Math.min(MAX_OFFLINE_SECONDS, Math.max(0, elapsedMs / 1000));
@@ -75,6 +77,25 @@ function App() {
       const dt = (now - lastTickRef.current) / 1000;
       lastTickRef.current = now;
       dispatch({ type: 'TICK', dt });
+
+      const scanRate = getAutoScanRate(stateRef.current);
+      autoScanCarryRef.current += scanRate * Math.max(0, dt);
+      const scansThisFrame = Math.floor(autoScanCarryRef.current);
+      if (scansThisFrame > 0) {
+        autoScanCarryRef.current -= scansThisFrame;
+        const rapidSpacingSeconds = 0.02;
+        const clickAmplitude = Math.min(WAVE_HEIGHT * 0.42, 4 + Math.log10(getClickPower(stateRef.current) + 1) * 7);
+        setClickMarkers((markers) => [
+          ...markers,
+          ...Array.from({ length: scansThisFrame }, (_, i) => ({
+            id: clickMarkerIdRef.current + i,
+            createdAt: now / 1000 - (scansThisFrame - i - 1) * rapidSpacingSeconds,
+            amplitude: clickAmplitude,
+          })),
+        ]);
+        clickMarkerIdRef.current += scansThisFrame;
+      }
+
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);

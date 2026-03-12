@@ -69,6 +69,11 @@ export const createInitialState = (): GameState => {
 
 const addSignal = (state: GameState, amount: number): GameState => ({ ...state, signal: state.signal + amount, totalSignalEarned: state.totalSignalEarned + amount });
 
+const applyScans = (state: GameState, scans: number): GameState => {
+  if (scans <= 0) return state;
+  return addSignal(state, getClickPower(state) * scans);
+};
+
 const buyGenerator = (state: GameState, generatorId: GeneratorId, amount: number | 'max'): GameState => {
   const count = amount === 'max' ? getBuyMaxCount(state, generatorId) : amount;
   if (count <= 0) return state;
@@ -150,7 +155,8 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
   switch (action.type) {
     case 'TICK': {
       const dt = Math.max(0, Math.min(1, action.dt));
-      let next = addSignal(state, getTotalSps(state) * dt + getClickPower(state) * getAutoScanRate(state) * dt);
+      let next = addSignal(state, getTotalSps(state) * dt);
+      next = applyScans(next, getAutoScanRate(next) * dt);
       next = { ...next, dp: next.dp + getPassiveDpPerSecond(next) * dt };
       if (state.autoBuyEnabled && state.upgrades.unlock_buy_max > 0) {
         for (const gen of ['scanner', 'dish', 'sifter', 'probe', 'supercomputer', 'correlator'] as GeneratorId[]) {
@@ -160,7 +166,7 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
       return maybeAutoClaim(sanitize(next));
     }
     case 'MANUAL_SCAN':
-      return sanitize(addSignal(state, getClickPower(state)));
+      return sanitize(applyScans(state, 1));
     case 'BUY_GENERATOR':
       return sanitize(buyGenerator(state, action.generatorId, action.amount));
     case 'BUY_UPGRADE': {
