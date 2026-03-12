@@ -74,6 +74,19 @@ const applyScans = (state: GameState, scans: number): GameState => {
   return addSignal(state, getClickPower(state) * scans);
 };
 
+
+const canAffordGeneratorBatch = (state: GameState, generatorId: GeneratorId, amount: number): boolean => {
+  if (amount <= 0) return false;
+  const owned = state.generators[generatorId];
+  let signal = state.signal;
+  for (let i = 0; i < amount; i += 1) {
+    const cost = getGeneratorCost(generatorId, owned, i, state);
+    if (signal < cost) return false;
+    signal -= cost;
+  }
+  return true;
+};
+
 const buyGenerator = (state: GameState, generatorId: GeneratorId, amount: number | 'max'): GameState => {
   const count = amount === 'max' ? getBuyMaxCount(state, generatorId) : amount;
   if (count <= 0) return state;
@@ -161,7 +174,13 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
       if (state.autoBuyEnabled && state.upgrades.unlock_buy_max > 0) {
         const autoAmount = state.buyAmount;
         for (const gen of ['scanner', 'dish', 'sifter', 'probe', 'supercomputer', 'correlator'] as GeneratorId[]) {
-          next = buyGenerator(next, gen, autoAmount);
+          if (autoAmount === 'max') {
+            next = buyGenerator(next, gen, 'max');
+            continue;
+          }
+          if (canAffordGeneratorBatch(next, gen, autoAmount)) {
+            next = buyGenerator(next, gen, autoAmount);
+          }
         }
       }
       return maybeAutoClaim(sanitize(next));
