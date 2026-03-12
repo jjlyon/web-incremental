@@ -327,7 +327,7 @@ function App() {
     return owned * def.baseSps * getGeneratorMultiplier(state, generatorId) * globalWaveMultiplier;
   });
   const maxContributionSps = Math.max(1, ...generatorContributions);
-  const MAX_WAVE_AMPLITUDE = 30;
+  const MAX_WAVE_AMPLITUDE = 24;
 
   const visibleGeneratorWaves = generatorWaveOrder.map((generatorId, index) => {
     const contributionSps = generatorContributions[index];
@@ -347,6 +347,27 @@ function App() {
       isUnlocked: state.generators[generatorId] > 0,
     };
   }).filter((wave) => wave.isUnlocked);
+
+  const aggregateScaleSps = Math.max(1, undampenedSps, sps, maxContributionSps);
+  const cleanAmplitude = (undampenedSps / aggregateScaleSps) * 34;
+  const effectiveAmplitude = (sps / aggregateScaleSps) * 34;
+  const suppressionIntensity = Math.max(0, Math.min(1, noiseImpactPercent / 100));
+  const sampleXs = Array.from({ length: Math.floor(WAVE_WIDTH / WAVE_SAMPLE_STEP) + 1 }, (_, i) => i * WAVE_SAMPLE_STEP);
+  const cleanPoints = sampleXs.map((x) => {
+    const radians = (x / WAVE_WIDTH) * 1.05 * Math.PI * 2 + waveTime * WAVE_SPEED * 0.85;
+    const y = WAVE_HEIGHT / 2 + Math.sin(radians) * cleanAmplitude;
+    return { x, y };
+  });
+  const effectivePoints = sampleXs.map((x) => {
+    const radians = (x / WAVE_WIDTH) * 1.05 * Math.PI * 2 + waveTime * WAVE_SPEED * 0.85;
+    const shimmer = (Math.sin((x / WAVE_WIDTH) * 16 + waveTime * 8) + Math.sin((x / WAVE_WIDTH) * 30 + waveTime * 15) * 0.6) * (0.5 + suppressionIntensity * 3.2);
+    const y = WAVE_HEIGHT / 2 + Math.sin(radians) * effectiveAmplitude + shimmer;
+    return { x, y };
+  });
+  const toPath = (points: Array<{ x: number; y: number }>): string => points.map((point, idx) => `${idx === 0 ? 'M' : 'L'}${point.x},${point.y.toFixed(2)}`).join(' ');
+  const cleanPath = toPath(cleanPoints);
+  const effectivePath = toPath(effectivePoints);
+  const suppressionBandPath = `${toPath(cleanPoints)} ${[...effectivePoints].reverse().map((point) => `L${point.x},${point.y.toFixed(2)}`).join(' ')} Z`;
 
 
   const scannerFrequency = WAVE_FREQUENCIES[0];
@@ -372,42 +393,38 @@ function App() {
         {hasBeaconLayerUnlocked && <div>Beacons: {formatNumber(state.beacons)}</div>}
       </div>
 
-      <div className="panel noise-panel">
-        <div className="wave-header"><strong>Noise Interference Map</strong><span className="muted">How much ambient noise is suppressing your effective output right now.</span></div>
-        <div className="noise-grid">
-          <div>
-            <div className="noise-meter-track">
-              <div className="noise-meter-safe" style={{ width: `${Math.max(0, Math.min(100, clampedNoiseFactor * 100)).toFixed(1)}%` }} />
-              <div className="noise-meter-loss" style={{ width: `${Math.max(0, Math.min(100, noiseImpactPercent)).toFixed(1)}%` }} />
-            </div>
-            <div className="noise-stats muted">
-              <span>Efficiency: {formatNumber(clampedNoiseFactor * 100)}%</span>
-              <span>Suppression: {formatNumber(noiseImpactPercent)}%</span>
-              <span>Lost SPS: {formatNumber(spsLostToNoise)}</span>
-            </div>
-          </div>
-          <svg viewBox="0 0 360 84" className="noise-spark" role="img" aria-label="Noise damping visualization">
-            {Array.from({ length: 36 }, (_, i) => {
-              const x = i * 10;
-              const envelope = (0.35 + (state.noise / 100)) * (1 - clampedNoiseFactor);
-              const height = 8 + (Math.sin((i + waveTime * 8) * 0.8) + 1) * 18 * Math.min(1.4, envelope + 0.15);
-              return <rect key={`noise-bar-${i}`} x={x} y={84 - height} width={7} height={height} rx={1.5} className="noise-bar" />;
-            })}
-            <line x1="0" y1="42" x2="360" y2="42" className="noise-midline" />
-          </svg>
-        </div>
-        <div className="muted">Projected clean SPS without current noise: {formatNumber(undampenedSps)} (current: {formatNumber(sps)}).</div>
-      </div>
-
       <div className="panel wave-panel">
-        <div className="wave-header"><strong>Signal Oscilloscope</strong><span className="muted">Wave amplitudes are linear-relative to the highest current generator SPS contribution.</span></div>
+        <div className="wave-header">
+          <strong>Signal Oscilloscope</strong>
+          <span className="muted">Clean and effective output are overlaid; suppression appears as interference between them.</span>
+        </div>
+        <div className="wave-stats">
+          <span>Clean SPS: {formatNumber(undampenedSps)}</span>
+          <span>Effective SPS: {formatNumber(sps)}</span>
+          <span>Lost SPS: {formatNumber(spsLostToNoise)}</span>
+          <span>Efficiency: {formatNumber(clampedNoiseFactor * 100)}%</span>
+        </div>
         <div className="wave-body">
           <div className="wave-scale" aria-hidden="true">
-            <span>+{formatNumber(maxContributionSps)} SPS</span>
+            <span>+{formatNumber(aggregateScaleSps)} SPS</span>
             <span>0 SPS</span>
-            <span>-{formatNumber(maxContributionSps)} SPS</span>
+            <span>-{formatNumber(aggregateScaleSps)} SPS</span>
           </div>
-          <svg viewBox={`0 0 ${WAVE_WIDTH} ${WAVE_HEIGHT}`} className="wave-display" role="img" aria-label="Live generator sinewaves"><path d={`M0,${WAVE_HEIGHT / 2} H${WAVE_WIDTH}`} className="wave-baseline" />{visibleGeneratorWaves.map((wave) => <path key={wave.generatorId} d={wave.path} className="wave-line" style={{ stroke: wave.color, opacity: 0.95 }} />)}{visibleClickMarkers.map((marker) => <circle key={`click-${marker.id}`} cx={marker.x.toFixed(2)} cy={marker.y.toFixed(2)} r={2.8} className="wave-click-marker" />)}</svg>
+          <svg viewBox={`0 0 ${WAVE_WIDTH} ${WAVE_HEIGHT}`} className="wave-display" role="img" aria-label="Integrated signal and noise oscilloscope">
+            <path d={`M0,${WAVE_HEIGHT / 2} H${WAVE_WIDTH}`} className="wave-baseline" />
+            <path d={suppressionBandPath} className="wave-suppression-band" style={{ opacity: 0.12 + suppressionIntensity * 0.26 }} />
+            <path d={cleanPath} className="wave-clean-line" />
+            <path d={effectivePath} className="wave-effective-line" style={{ opacity: 0.82 + suppressionIntensity * 0.18 }} />
+            {visibleGeneratorWaves.map((wave) => (
+              <path
+                key={wave.generatorId}
+                d={wave.path}
+                className="wave-line wave-line-secondary"
+                style={{ stroke: wave.color, opacity: 0.2 + Math.min(0.35, suppressionIntensity * 0.2) }}
+              />
+            ))}
+            {visibleClickMarkers.map((marker) => <circle key={`click-${marker.id}`} cx={marker.x.toFixed(2)} cy={marker.y.toFixed(2)} r={2.8} className="wave-click-marker" />)}
+          </svg>
         </div>
         <div className="wave-legend">{visibleGeneratorWaves.length > 0 ? visibleGeneratorWaves.map((wave) => <span key={`${wave.generatorId}-legend`} className="wave-legend-item" style={{ '--wave-color': wave.color } as CSSProperties}>{wave.generatorName}: {formatNumber(wave.contributionSps)} SPS</span>) : <span className="muted">No unlocked generators yet.</span>}</div>
       </div>

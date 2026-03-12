@@ -135,12 +135,35 @@ textarea { width: 100%; margin-top: 0.3rem; background: #0f131b; color: #d4d8df;
 .wave-scale span { display:block; line-height:1.1; }
 
 
-.noise-panel { padding-top: 0.6rem; }
-.noise-grid { display:grid; grid-template-columns: 1.4fr 1fr; gap:0.65rem; align-items:center; }
-.noise-meter-track { display:flex; height:14px; border:1px solid #42506a; background:#101722; overflow:hidden; margin-bottom:0.4rem; }
-.noise-meter-safe { background: linear-gradient(90deg, #57e69e 0%, #9effca 100%); }
-.noise-meter-loss { background: linear-gradient(90deg, #ffb36a 0%, #ff6a9f 100%); }
-.noise-stats { display:flex; gap:0.8rem; flex-wrap:wrap; }
-.noise-spark { width:100%; height:84px; border:1px solid #3a4963; background:linear-gradient(180deg,#101621,#121c2b); }
-.noise-bar { fill:#ff7aa8; opacity:0.78; }
-.noise-midline { stroke:#7ea0c8; stroke-width:1; stroke-dasharray:4 4; opacity:0.5; }
+.wave-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.35rem;
+  margin-bottom: 0.45rem;
+  font-size: 0.8rem;
+  color: #d3def0;
+}
+.wave-stats span {
+  border: 1px solid #334563;
+  background: #111a28;
+  padding: 0.2rem 0.35rem;
+}
+.wave-suppression-band {
+  fill: #ff6a9f;
+  filter: drop-shadow(0 0 5px rgba(255, 122, 168, 0.35));
+}
+.wave-clean-line {
+  fill: none;
+  stroke: #9af7ff;
+  stroke-width: 2.4;
+  filter: drop-shadow(0 0 5px rgba(154, 247, 255, 0.5));
+}
+.wave-effective-line {
+  fill: none;
+  stroke: #67f3a1;
+  stroke-width: 2.1;
+  filter: drop-shadow(0 0 6px rgba(103, 243, 161, 0.55));
+}
+.wave-line-secondary {
+  stroke-width: 1.1;
+}
