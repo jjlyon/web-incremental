@@ -192,6 +192,15 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
           totalSignalEarned: withProtocol.totalSignalEarned + 200,
         });
       }
+      if (action.protocolId === 'boot_sequence_cache') {
+        return sanitize({
+          ...withProtocol,
+          generators: {
+            ...withProtocol.generators,
+            scanner: withProtocol.generators.scanner + 1,
+          },
+        });
+      }
       return withProtocol;
     }
     case 'BUY_RELAY_UPGRADE': {
