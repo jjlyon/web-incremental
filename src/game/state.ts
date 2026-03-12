@@ -159,8 +159,9 @@ export const gameReducer = (state: GameState, action: Action): GameState => {
       next = applyScans(next, getAutoScanRate(next) * dt);
       next = { ...next, dp: next.dp + getPassiveDpPerSecond(next) * dt };
       if (state.autoBuyEnabled && state.upgrades.unlock_buy_max > 0) {
+        const autoAmount = state.buyAmount;
         for (const gen of ['scanner', 'dish', 'sifter', 'probe', 'supercomputer', 'correlator'] as GeneratorId[]) {
-          next = buyGenerator(next, gen, 'max');
+          next = buyGenerator(next, gen, autoAmount);
         }
       }
       return maybeAutoClaim(sanitize(next));

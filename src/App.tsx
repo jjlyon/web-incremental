@@ -13,6 +13,8 @@ import {
   getBuyMaxCount,
   getClickPower,
   getGeneratorCost,
+  getGeneratorMultiplier,
+  getGlobalMultiplier,
   getAutoScanRate,
   getPassiveDpPerSecond,
   getPrestigeGain,
@@ -167,16 +169,20 @@ function App() {
       <h3>Generators</h3>
       {GENERATORS.map((gen) => {
         const owned = state.generators[gen.id];
-        const effectiveBuyAmount = !unlockedBuyMax && state.buyAmount !== 1 ? 1 : state.buyAmount;
-        const desired = effectiveBuyAmount === 'max' ? getBuyMaxCount(state, gen.id) : effectiveBuyAmount;
-        const canBuy = desired > 0 && state.signal >= getGeneratorCost(gen.id, owned, 0, state);
+        const canBuyOne = state.signal >= getGeneratorCost(gen.id, owned, 0, state);
+        const canBuyTen = unlockedBuyMax && state.signal >= getGeneratorCost(gen.id, owned, 0, state);
+        const canBuyMax = unlockedBuyMax && getBuyMaxCount(state, gen.id) > 0;
         return (
           <div className="row" key={gen.id}>
             <div>
               <strong>{gen.name}</strong> ({owned})
               <div className="muted">Cost: {formatNumber(getGeneratorCost(gen.id, owned, 0, state))} | +{formatNumber(gen.baseSps)} base SPS</div>
             </div>
-            <button disabled={!canBuy} onClick={() => dispatch({ type: 'BUY_GENERATOR', generatorId: gen.id, amount: effectiveBuyAmount })}>Buy {effectiveBuyAmount === 'max' ? 'Max' : effectiveBuyAmount}</button>
+            <div className="actions">
+              <button disabled={!canBuyOne} onClick={() => dispatch({ type: 'BUY_GENERATOR', generatorId: gen.id, amount: 1 })}>Buy 1</button>
+              {unlockedBuyMax && <button disabled={!canBuyTen} onClick={() => dispatch({ type: 'BUY_GENERATOR', generatorId: gen.id, amount: 10 })}>Buy 10</button>}
+              {unlockedBuyMax && <button disabled={!canBuyMax} onClick={() => dispatch({ type: 'BUY_GENERATOR', generatorId: gen.id, amount: 'max' })}>Buy Max</button>}
+            </div>
           </div>
         );
       })}
@@ -306,17 +312,37 @@ function App() {
 
   const sanityIssues = runSanityChecks(state);
   const waveTime = performance.now() / 1000;
-  const rawAmplitudes = generatorWaveOrder.map((generatorId) => state.generators[generatorId] * 0.6);
-  const amplitudeNormalizer = Math.max(1, Math.max(1, ...rawAmplitudes) / 26);
+  const globalWaveMultiplier = getGlobalMultiplier(state);
+  const generatorContributions = generatorWaveOrder.map((generatorId) => {
+    const def = GENERATORS.find((g) => g.id === generatorId);
+    if (!def) return 0;
+    const owned = state.generators[generatorId];
+    return owned * def.baseSps * getGeneratorMultiplier(state, generatorId) * globalWaveMultiplier;
+  });
+  const maxContributionSps = Math.max(1, ...generatorContributions);
+  const transformedContributions = generatorContributions.map((spsValue) => Math.log10(spsValue + 1));
+  const maxTransformedContribution = Math.max(1, ...transformedContributions);
+
   const visibleGeneratorWaves = generatorWaveOrder.map((generatorId, index) => {
-    const amplitude = rawAmplitudes[index] / amplitudeNormalizer;
+    const contributionSps = generatorContributions[index];
+    const transformed = transformedContributions[index];
+    const amplitude = contributionSps > 0 ? Math.max(2, (transformed / maxTransformedContribution) * 26) : 0;
     let path = '';
     for (let x = 0; x <= WAVE_WIDTH; x += WAVE_SAMPLE_STEP) {
       const y = WAVE_HEIGHT / 2 + Math.sin((x / WAVE_WIDTH) * WAVE_FREQUENCIES[index] * Math.PI * 2 + waveTime * WAVE_SPEED) * amplitude;
       path += `${x === 0 ? 'M' : 'L'}${x},${y.toFixed(2)} `;
     }
-    return { generatorId, generatorName: GENERATORS.find((g) => g.id === generatorId)?.name ?? generatorId, color: WAVE_COLORS[index], owned: state.generators[generatorId], path: path.trim(), isUnlocked: state.generators[generatorId] > 0 };
+    return {
+      generatorId,
+      generatorName: GENERATORS.find((g) => g.id === generatorId)?.name ?? generatorId,
+      color: WAVE_COLORS[index],
+      owned: state.generators[generatorId],
+      contributionSps,
+      path: path.trim(),
+      isUnlocked: state.generators[generatorId] > 0,
+    };
   }).filter((wave) => wave.isUnlocked);
+
 
   const scannerFrequency = WAVE_FREQUENCIES[0];
   const visibleClickMarkers = clickMarkers
@@ -342,9 +368,16 @@ function App() {
       </div>
 
       <div className="panel wave-panel">
-        <div className="wave-header"><strong>Signal Oscilloscope</strong><span className="muted">Unlocked generators render individual sinewaves.</span></div>
-        <svg viewBox={`0 0 ${WAVE_WIDTH} ${WAVE_HEIGHT}`} className="wave-display" role="img" aria-label="Live generator sinewaves"><path d={`M0,${WAVE_HEIGHT / 2} H${WAVE_WIDTH}`} className="wave-baseline" />{visibleGeneratorWaves.map((wave) => <path key={wave.generatorId} d={wave.path} className="wave-line" style={{ stroke: wave.color, opacity: 0.95 }} />)}{visibleClickMarkers.map((marker) => <circle key={`click-${marker.id}`} cx={marker.x.toFixed(2)} cy={marker.y.toFixed(2)} r={2.8} className="wave-click-marker" />)}</svg>
-        <div className="wave-legend">{visibleGeneratorWaves.length > 0 ? visibleGeneratorWaves.map((wave) => <span key={`${wave.generatorId}-legend`} className="wave-legend-item" style={{ '--wave-color': wave.color } as CSSProperties}>{wave.generatorName}: {wave.owned}</span>) : <span className="muted">No unlocked generators yet.</span>}</div>
+        <div className="wave-header"><strong>Signal Oscilloscope</strong><span className="muted">Wave amplitude is based on each generator's actual SPS contribution.</span></div>
+        <div className="wave-body">
+          <div className="wave-scale" aria-hidden="true">
+            <span>{formatNumber(maxContributionSps)} SPS</span>
+            <span>{formatNumber(maxContributionSps / 2)} SPS</span>
+            <span>0 SPS</span>
+          </div>
+          <svg viewBox={`0 0 ${WAVE_WIDTH} ${WAVE_HEIGHT}`} className="wave-display" role="img" aria-label="Live generator sinewaves"><path d={`M0,${WAVE_HEIGHT / 2} H${WAVE_WIDTH}`} className="wave-baseline" />{visibleGeneratorWaves.map((wave) => <path key={wave.generatorId} d={wave.path} className="wave-line" style={{ stroke: wave.color, opacity: 0.95 }} />)}{visibleClickMarkers.map((marker) => <circle key={`click-${marker.id}`} cx={marker.x.toFixed(2)} cy={marker.y.toFixed(2)} r={2.8} className="wave-click-marker" />)}</svg>
+        </div>
+        <div className="wave-legend">{visibleGeneratorWaves.length > 0 ? visibleGeneratorWaves.map((wave) => <span key={`${wave.generatorId}-legend`} className="wave-legend-item" style={{ '--wave-color': wave.color } as CSSProperties}>{wave.generatorName}: {formatNumber(wave.contributionSps)} SPS</span>) : <span className="muted">No unlocked generators yet.</span>}</div>
       </div>
 
       <div className="tabs">{tabs.filter((tab) => tab !== 'Beacon' || hasBeaconLayerUnlocked).map((tab) => {
@@ -374,7 +407,7 @@ function App() {
           </label>
           {unlockedBuyMax && (
             <div>
-              Preferred buy amount:
+              Auto-buy amount:
               {[1, 10, 'max'].map((amt) => (
                 <button key={amt} onClick={() => dispatch({ type: 'SET_BUY_AMOUNT', amount: amt as 1 | 10 | 'max' })}>{amt}</button>
               ))}
