@@ -15,6 +15,7 @@ import {
   getMilestoneDpReward,
   getPassiveDpPerSecond,
   getPrestigeGain,
+  getRelayChain,
   getRelayEnergyPerRelay,
   getRelayUpgradeCost,
   getTotalSps,
@@ -52,6 +53,9 @@ export const createInitialState = (): GameState => {
     relayEnergy: 0,
     networkFragments: 0,
     beacons: 0,
+    activeSourceId: 'local_satellite',
+    falloffFactor: 0.15,
+    relayChain: [],
     generators: { ...emptyGenerators },
     upgrades: { ...emptyUpgrades },
     relayProtocols: { ...emptyRelayProtocols },
@@ -105,7 +109,7 @@ const buyGenerator = (state: GameState, generatorId: GeneratorId, amount: number
   return { ...state, signal, generators: { ...state.generators, [generatorId]: owned + purchased } };
 };
 
-const sanitize = (state: GameState): GameState => ({ ...state, noise: computeNoise(state) });
+const sanitize = (state: GameState): GameState => ({ ...state, noise: computeNoise(state), relayChain: getRelayChain(state) });
 
 const maybeAutoClaim = (state: GameState): GameState => {
   if (!state.autoClaimFindings) return state;

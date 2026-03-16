@@ -1,5 +1,5 @@
-import { BALANCE, BEACON_UPGRADES, GENERATORS, RELAY_PROTOCOLS, RELAY_UPGRADES, UPGRADES } from './data';
-import { BeaconUpgradeId, GameState, GeneratorId, RelayProtocolId, RelayUpgradeId, UpgradeId } from './types';
+import { BALANCE, BEACON_UPGRADES, GENERATORS, RELAY_PROTOCOLS, RELAY_UPGRADES, SIGNAL_SOURCES, UPGRADES } from './data';
+import { BeaconUpgradeId, GameState, GeneratorId, RelayProtocolId, RelayUpgradeId, SignalRelay, SignalSource, UpgradeId } from './types';
 
 const generatorById = Object.fromEntries(GENERATORS.map((g) => [g.id, g]));
 
@@ -22,6 +22,89 @@ const hasUpgrade = (state: GameState, id: UpgradeId) => state.upgrades[id] > 0;
 const hasProtocol = (state: GameState, id: RelayProtocolId) => state.relayProtocols[id] > 0;
 const relayUpgradeLevel = (state: GameState, id: RelayUpgradeId) => state.relayUpgrades[id] ?? 0;
 const beaconUpgradeLevel = (state: GameState, id: BeaconUpgradeId) => state.beaconUpgrades[id] ?? 0;
+
+
+const sourceById = Object.fromEntries(SIGNAL_SOURCES.map((source) => [source.id, source]));
+
+const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
+
+export const getActiveSource = (state: GameState): SignalSource => sourceById[state.activeSourceId] ?? SIGNAL_SOURCES[0];
+
+export const attenuationAtDistance = (distance: number, falloffFactor: number): number => 1 / (1 + Math.max(0, distance) * Math.max(0, falloffFactor));
+
+export const getRelayAmplificationPerNode = (state: GameState): number => {
+  const efficiencyLevel = relayUpgradeLevel(state, 'relay_efficiency');
+  const networkLevel = relayUpgradeLevel(state, 'resonant_interface');
+  const repeaterLevel = relayUpgradeLevel(state, 'finding_archive');
+  const relayEfficiencyBoost = Math.pow(1.15, efficiencyLevel);
+  const networkBoost = 1 + networkLevel * BALANCE.relayNetworkBoostPerLevel;
+  const repeaterBoost = 1 + repeaterLevel * 0.04;
+  return 1.25 * relayEfficiencyBoost * networkBoost * repeaterBoost;
+};
+
+export const getRelayAttenuationReducer = (state: GameState): number => {
+  const phasedLevel = relayUpgradeLevel(state, 'spectral_refinement');
+  return clamp01(phasedLevel * BALANCE.relayAttenuationReductionPerLevel);
+};
+
+export const getRelayChain = (state: GameState): SignalRelay[] => {
+  const relayCount = Math.max(0, Math.floor(state.relays));
+  if (relayCount <= 0) return [];
+  const amplification = getRelayAmplificationPerNode(state);
+  return Array.from({ length: relayCount }, (_, index) => ({
+    id: `relay-${index + 1}`,
+    position: (index + 1) / (relayCount + 1),
+    amplification,
+  }));
+};
+
+export interface SignalPipelineBreakdown {
+  source: SignalSource;
+  baseSignal: number;
+  distanceAttenuation: number;
+  relayAmplification: number;
+  noiseEfficiency: number;
+  effectiveSignal: number;
+  relayChain: SignalRelay[];
+}
+
+export const getNoiseEfficiency = (state: GameState): number => {
+  const baseNoisePenalty = 1 / (1 + state.noise / 100);
+  const mitigation = hasUpgrade(state, 'adaptive_gain_control') ? 0.4 : 0;
+  const effectivePenalty = 1 - (1 - baseNoisePenalty) * (1 - mitigation);
+  return Math.max(0.05, effectivePenalty);
+};
+
+export const getSignalPipelineBreakdown = (state: GameState): SignalPipelineBreakdown => {
+  const source = getActiveSource(state);
+  const relayChain = getRelayChain(state);
+  const attenuationReducer = getRelayAttenuationReducer(state);
+  const effectiveFalloff = state.falloffFactor * (1 - attenuationReducer);
+  let relayAmplification = 1;
+  let cursor = 0;
+  for (const relay of relayChain) {
+    const segmentDistance = source.distance * Math.max(0, relay.position - cursor);
+    relayAmplification *= attenuationAtDistance(segmentDistance, effectiveFalloff);
+    relayAmplification *= relay.amplification;
+    cursor = relay.position;
+  }
+  relayAmplification *= attenuationAtDistance(source.distance * Math.max(0, 1 - cursor), effectiveFalloff);
+
+  const distanceAttenuation = attenuationAtDistance(source.distance, state.falloffFactor);
+  const noiseEfficiency = getNoiseEfficiency(state);
+  const baseSignal = source.baseSignal;
+  const effectiveSignal = baseSignal * distanceAttenuation * relayAmplification * noiseEfficiency;
+
+  return {
+    source,
+    baseSignal,
+    distanceAttenuation,
+    relayAmplification,
+    noiseEfficiency,
+    effectiveSignal,
+    relayChain,
+  };
+};
 
 const getEarlyGeneratorCostMultiplier = (state: GameState, generatorId: GeneratorId): number => {
   let mult = 1;
@@ -63,11 +146,6 @@ export const getGlobalMultiplier = (state: GameState): number => {
   const relayBoost = BALANCE.relayBaseGlobalPerRelay * (1 + relayUpgradeLevel(state, 'relay_efficiency') * 0.05);
   mult *= 1 + state.relays * relayBoost;
 
-  const baseNoisePenalty = 1 / (1 + state.noise / 100);
-  const mitigation = hasUpgrade(state, 'adaptive_gain_control') ? 0.4 : 0;
-  const effectivePenalty = 1 - (1 - baseNoisePenalty) * (1 - mitigation);
-  mult *= Math.max(0.05, effectivePenalty);
-
   return mult;
 };
 
@@ -90,10 +168,14 @@ export const getGeneratorMultiplier = (state: GameState, generatorId: GeneratorI
 
 export const getTotalSps = (state: GameState): number => {
   const global = getGlobalMultiplier(state);
-  return GENERATORS.reduce((sum, gen) => {
+  const rawProduction = GENERATORS.reduce((sum, gen) => {
     const owned = state.generators[gen.id];
     return sum + owned * gen.baseSps * getGeneratorMultiplier(state, gen.id) * global;
   }, 0);
+
+  const pipeline = getSignalPipelineBreakdown(state);
+  const sourceScale = pipeline.effectiveSignal / Math.max(1, pipeline.baseSignal);
+  return rawProduction * sourceScale;
 };
 
 export const getClickPower = (state: GameState): number => {
@@ -103,7 +185,6 @@ export const getClickPower = (state: GameState): number => {
   if (hasProtocol(state, 'accelerated_sampling')) click *= 1.15;
   click *= Math.pow(1.1, state.upgrades.signal_mapping);
   if (hasUpgrade(state, 'burst_sampling')) click += getTotalSps(state) * 0.05;
-  if (relayUpgradeLevel(state, 'resonant_interface') > 0) click += getTotalSps(state) * 0.02;
   return click;
 };
 
@@ -117,8 +198,7 @@ export const getAutoScanRate = (state: GameState): number => {
 
 export const computeNoise = (state: GameState): number => {
   const totalGens = Object.values(state.generators).reduce((a, b) => a + b, 0);
-  const scalar = relayUpgradeLevel(state, 'spectral_refinement') > 0 ? 3.52 : 4;
-  const noise = Math.sqrt(totalGens) * scalar;
+  const noise = Math.sqrt(totalGens) * 4;
   return Number.isFinite(noise) ? noise : 0;
 };
 
@@ -225,5 +305,9 @@ export const runSanityChecks = (state: GameState): string[] => {
   if (!Number.isFinite(computeNoise(state))) issues.push('Noise became non-finite.');
   if (getPrestigeProjection(BALANCE.relayPrestigeBase) < 1) issues.push('Relay projection should be at least 1 at base threshold.');
   if (getBeaconProjection({ ...state, totalRelaysEarned: 25, totalSignalEarned: 1e18 }) < 1) issues.push('Beacon projection should be positive at unlock thresholds.');
+  const pipeline = getSignalPipelineBreakdown(state);
+  if (!Number.isFinite(pipeline.effectiveSignal)) issues.push('Signal pipeline produced non-finite output.');
+  const attenuationGrowthRate = 1 + getActiveSource(state).distance * state.falloffFactor;
+  if (pipeline.relayAmplification >= attenuationGrowthRate * 3.5) issues.push('Relay amplification overtook attenuation growth constraints.');
   return issues;
 };
