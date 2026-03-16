@@ -109,6 +109,20 @@ export interface MilestoneDef {
   condition: (state: GameState) => boolean;
 }
 
+export interface SignalSource {
+  id: string;
+  name: string;
+  distance: number;
+  baseSignal: number;
+  frequency: number;
+}
+
+export interface SignalRelay {
+  id: string;
+  position: number;
+  amplification: number;
+}
+
 export interface GameState {
   signal: number;
   totalSignalEarned: number;
@@ -119,6 +133,9 @@ export interface GameState {
   relayEnergy: number;
   networkFragments: number;
   beacons: number;
+  activeSourceId: string;
+  falloffFactor: number;
+  relayChain: SignalRelay[];
   generators: Record<GeneratorId, number>;
   upgrades: Record<UpgradeId, number>;
   relayProtocols: Record<RelayProtocolId, number>;

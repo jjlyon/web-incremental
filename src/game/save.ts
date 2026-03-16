@@ -1,8 +1,8 @@
 import { BEACON_UPGRADES, GENERATORS, MILESTONES, RELAY_PROTOCOLS, RELAY_UPGRADES, UPGRADES } from './data';
 import { GameState, TabName } from './types';
 
-const SAVE_KEY = 'signal-and-salvage-save-v2';
-const LEGACY_SAVE_KEY = 'signal-and-salvage-save-v1';
+const SAVE_KEY = 'signal-and-salvage-save-v3';
+const LEGACY_SAVE_KEY = 'signal-and-salvage-save-v2';
 const VALID_TABS: TabName[] = ['Control', 'Generators', 'Upgrades', 'DP Upgrades', 'Findings', 'Relay', 'Beacon', 'Stats'];
 const VALID_MILESTONES = new Set(MILESTONES.map((milestone) => milestone.id));
 
@@ -93,6 +93,9 @@ const parseGameState = (raw: string): GameState | null => {
       relayEnergy: hasNumber(parsed, 'relayEnergy') ? (parsed.relayEnergy as number) : 0,
       networkFragments: hasNumber(parsed, 'networkFragments') ? (parsed.networkFragments as number) : 0,
       beacons: hasNumber(parsed, 'beacons') ? (parsed.beacons as number) : 0,
+      activeSourceId: typeof parsed.activeSourceId === 'string' ? parsed.activeSourceId : 'local_satellite',
+      falloffFactor: hasNumber(parsed, 'falloffFactor') ? (parsed.falloffFactor as number) : 0.15,
+      relayChain: Array.isArray(parsed.relayChain) ? [] : [],
       generators: normalizedGenerators as GameState['generators'],
       upgrades: normalizedUpgrades as GameState['upgrades'],
       relayProtocols: normalizedRelayProtocols as GameState['relayProtocols'],
@@ -123,7 +126,7 @@ export const saveGame = (state: GameState): void => {
 };
 
 export const loadGame = (): GameState | null => {
-  const raw = localStorage.getItem(SAVE_KEY) ?? localStorage.getItem(LEGACY_SAVE_KEY);
+  const raw = localStorage.getItem(SAVE_KEY) ?? localStorage.getItem(LEGACY_SAVE_KEY) ?? localStorage.getItem('signal-and-salvage-save-v1');
   if (!raw) return null;
   return parseGameState(raw);
 };

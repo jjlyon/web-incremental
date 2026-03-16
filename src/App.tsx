@@ -1,6 +1,6 @@
 import { CSSProperties, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { TabButton } from './components/TabButton';
-import { BALANCE, BEACON_UPGRADES, GENERATORS, MILESTONES, RELAY_PROTOCOLS, RELAY_UPGRADES, UPGRADES } from './game/data';
+import { BALANCE, BEACON_UPGRADES, GENERATORS, MILESTONES, RELAY_PROTOCOLS, RELAY_UPGRADES, SIGNAL_SOURCES, UPGRADES } from './game/data';
 import {
   canBeaconReset,
   canPrestige,
@@ -18,8 +18,10 @@ import {
   getAutoScanRate,
   getPassiveDpPerSecond,
   getPrestigeGain,
+  getRelayAttenuationReducer,
   getRelayEnergyPerRelay,
   getRelayUpgradeCost,
+  getSignalPipelineBreakdown,
   getTotalSps,
   getUpgradeCost,
   getBeaconUpgradeCost,
@@ -153,13 +155,16 @@ function App() {
   const canBeaconNow = canBeaconReset(state) && beaconGain > 0;
   const relayEnergyPerRelay = getRelayEnergyPerRelay(state);
   const relayBaseContribution = state.relays * 2.5 * (1 + state.relayUpgrades.relay_efficiency * 0.05);
-  const baseNoisePenalty = 1 / (1 + state.noise / 100);
-  const noiseMitigation = state.upgrades.adaptive_gain_control > 0 ? 0.4 : 0;
-  const effectiveNoiseFactor = 1 - (1 - baseNoisePenalty) * (1 - noiseMitigation);
-  const clampedNoiseFactor = Math.max(0.05, effectiveNoiseFactor);
-  const undampenedSps = sps / clampedNoiseFactor;
+  const pipeline = getSignalPipelineBreakdown(state);
+  const source = pipeline.source;
+  const attenuationPercent = pipeline.distanceAttenuation * 100;
+  const relayBoostPercent = (pipeline.relayAmplification - 1) * 100;
+  const noiseEfficiencyPercent = pipeline.noiseEfficiency * 100;
+  const propagationMultiplier = pipeline.distanceAttenuation * pipeline.relayAmplification * pipeline.noiseEfficiency;
+  const cleanPropagationMultiplier = pipeline.distanceAttenuation * pipeline.relayAmplification;
+  const undampenedSps = cleanPropagationMultiplier > 0 ? sps / pipeline.noiseEfficiency : sps;
   const spsLostToNoise = Math.max(0, undampenedSps - sps);
-  const noiseImpactPercent = (1 - clampedNoiseFactor) * 100;
+  const noiseImpactPercent = (1 - pipeline.noiseEfficiency) * 100;
 
   const hasAffordableGenerator = GENERATORS.some((gen) => state.signal >= getGeneratorCost(gen.id, state.generators[gen.id], 0, state));
   const hasAffordableSignalUpgrade = UPGRADES.some((up) => up.currencyType === 'signal' && canPurchaseUpgrade(state, up.id));
@@ -284,7 +289,7 @@ function App() {
                   <div>
                     <strong>{up.name}</strong> [ENERGY {formatNumber(cost)}] {up.repeatable ? `(Lv ${level})` : owned ? '(Owned)' : ''}
                     <div className="muted">{up.description}</div>
-                    <div className="muted">{up.id === 'relay_efficiency' ? `Current relay effect scaling: +${formatNumber(level * 5)}%` : up.id === 'lean_procurement' ? 'Current: scanners/dishes cost x0.90.' : up.id === 'finding_archive' ? 'Current: findings grant x1.25 DP.' : up.id === 'spectral_refinement' ? 'Current: noise scaling x0.88.' : up.id === 'autonomous_scanners' ? 'Current: +1.5 auto scans/sec.' : up.id === 'resonant_interface' ? 'Current: manual scans gain +2% SPS.' : 'Current: +1 starting Dish Array.'}</div>
+                    <div className="muted">{up.id === 'relay_efficiency' ? `Current: each relay amplification x${formatNumber(Math.pow(1.15, level))}.` : up.id === 'lean_procurement' ? 'Current: scanners/dishes cost x0.90.' : up.id === 'finding_archive' ? `Current: findings x1.25 DP and relay cascades +${formatNumber(level * 4)}%.` : up.id === 'spectral_refinement' ? `Current: segment attenuation reduced by ${formatNumber(relayAttenuationReducer * 100)}%.` : up.id === 'autonomous_scanners' ? 'Current: +1.5 auto scans/sec.' : up.id === 'resonant_interface' ? `Current: network relay multiplier +${formatNumber(level * 6)}%.` : 'Current: +1 starting Dish Array.'}</div>
                   </div>
                   <button disabled={locked || owned || !canPurchaseRelayUpgrade(state, up.id)} onClick={() => dispatch({ type: 'BUY_RELAY_UPGRADE', upgradeId: up.id })}>{locked ? `Unlocks at ${up.unlockAtRelays}` : 'Buy'}</button>
                 </div>
@@ -372,8 +377,6 @@ function App() {
   }).filter((wave) => wave.isUnlocked);
 
   const aggregateScaleSps = Math.max(1, undampenedSps, sps, maxContributionSps);
-  const cleanAmplitude = (undampenedSps / aggregateScaleSps) * 34;
-  const effectiveAmplitude = (sps / aggregateScaleSps) * 34;
   const suppressionIntensity = Math.max(0, Math.min(1, noiseImpactPercent / 100));
   const relayCount = Math.max(0, Math.floor(state.relays));
   const beaconCount = Math.max(0, Math.floor(state.beacons));
@@ -404,17 +407,28 @@ function App() {
       return acc + Math.exp(-(distance * distance) * 2.2) * 0.7;
     }, 0));
   };
+  const relayAttenuationReducer = getRelayAttenuationReducer(state);
+  const baseAmplitude = (undampenedSps / aggregateScaleSps) * 34;
   const cleanPoints = sampleXs.map((x) => {
-    const radians = (x / WAVE_WIDTH) * 1.05 * Math.PI * 2 + waveTime * WAVE_SPEED * 0.85;
-    const y = WAVE_HEIGHT / 2 + Math.sin(radians) * cleanAmplitude;
+    const normalized = Math.max(0, Math.min(1, (x - WAVE_EDGE_PADDING) / (WAVE_WIDTH - WAVE_EDGE_PADDING * 2)));
+    const distancePosition = source.distance * normalized;
+    const attenuation = 1 / (1 + distancePosition * state.falloffFactor);
+    const relaysApplied = pipeline.relayChain.reduce((mult, relay) => (normalized >= relay.position ? mult * relay.amplification : mult), 1);
+    const propagationAtPosition = attenuation * relaysApplied;
+    const radians = (x / WAVE_WIDTH) * source.frequency * Math.PI * 2 + waveTime * WAVE_SPEED * 0.85;
+    const y = WAVE_HEIGHT / 2 + Math.sin(radians) * baseAmplitude * propagationAtPosition;
     return { x, y };
   });
   const effectivePoints = sampleXs.map((x) => {
-    const radians = (x / WAVE_WIDTH) * 1.05 * Math.PI * 2 + waveTime * WAVE_SPEED * 0.85;
+    const normalized = Math.max(0, Math.min(1, (x - WAVE_EDGE_PADDING) / (WAVE_WIDTH - WAVE_EDGE_PADDING * 2)));
+    const distancePosition = source.distance * normalized;
+    const attenuation = 1 / (1 + distancePosition * state.falloffFactor);
+    const relaysApplied = pipeline.relayChain.reduce((mult, relay) => (normalized >= relay.position ? mult * relay.amplification : mult), 1);
     const beaconSuppression = beaconSuppressionAt(x);
-    const shimmerBase = (Math.sin((x / WAVE_WIDTH) * 16 + waveTime * 8) + Math.sin((x / WAVE_WIDTH) * 30 + waveTime * 15) * 0.6) * (0.5 + suppressionIntensity * 3.2);
-    const shimmer = shimmerBase * (1 - beaconSuppression * 0.75);
-    const y = WAVE_HEIGHT / 2 + Math.sin(radians) * effectiveAmplitude + shimmer;
+    const jitterBase = (Math.sin((x / WAVE_WIDTH) * 16 + waveTime * 8) + Math.sin((x / WAVE_WIDTH) * 30 + waveTime * 15) * 0.6) * (0.4 + suppressionIntensity * 3.1);
+    const jitter = jitterBase * (1 - beaconSuppression * 0.75);
+    const radians = (x / WAVE_WIDTH) * source.frequency * Math.PI * 2 + waveTime * WAVE_SPEED * 0.85;
+    const y = WAVE_HEIGHT / 2 + Math.sin(radians) * baseAmplitude * attenuation * relaysApplied * pipeline.noiseEfficiency + jitter;
     return { x, y };
   });
   const toPath = (points: Array<{ x: number; y: number }>): string => points.map((point, idx) => `${idx === 0 ? 'M' : 'L'}${point.x},${point.y.toFixed(2)}`).join(' ');
@@ -428,6 +442,7 @@ function App() {
     cleanSignal: cleanPoints.map((point) => point.y),
     effectiveSignal: effectivePoints.map((point) => point.y),
   };
+
 
 
   const scannerFrequency = WAVE_FREQUENCIES[0];
@@ -456,13 +471,17 @@ function App() {
       <div className="panel wave-panel">
         <div className="wave-header">
           <strong>Signal Oscilloscope</strong>
-          <span className="muted">Clean and effective output are overlaid; suppression appears as interference between them.</span>
+          <span className="muted">Propagation view: source on the left, receiver on the right. Attenuation fades the wave, relays reconstruct it, and noise adds jitter.</span>
         </div>
         <div className="wave-stats">
-          <span>Clean SPS: {formatNumber(undampenedSps)}</span>
+          <span>Source: {source.name}</span>
+          <span>Distance: {formatNumber(source.distance)} AU</span>
+          <span>Attenuation: {formatNumber(attenuationPercent)}%</span>
+          <span>Relay Boost: {relayBoostPercent >= 0 ? '+' : ''}{formatNumber(relayBoostPercent)}%</span>
+          <span>Noise Efficiency: {formatNumber(noiseEfficiencyPercent)}%</span>
           <span>Effective SPS: {formatNumber(sps)}</span>
           <span>Lost SPS: {formatNumber(spsLostToNoise)}</span>
-          <span>Efficiency: {formatNumber(clampedNoiseFactor * 100)}%</span>
+          <span>Pipeline x{formatNumber(propagationMultiplier)}</span>
         </div>
         <div className="wave-body">
           <div className="wave-scale" aria-hidden="true">
@@ -478,12 +497,17 @@ function App() {
             </defs>
             <rect x="0" y="0" width={WAVE_WIDTH} height={WAVE_HEIGHT} fill="url(#waveGrid)" opacity="0.62" />
             <path d={`M0,${WAVE_HEIGHT / 2} H${WAVE_WIDTH}`} className="wave-baseline" />
+            <text x="8" y="16" className="wave-end-label">SOURCE</text>
+            <text x={WAVE_WIDTH - 82} y="16" className="wave-end-label">RECEIVER</text>
             <path d={suppressionBandPath} className="wave-suppression-band" style={{ opacity: 0.12 + suppressionIntensity * 0.26 }} />
             {beaconZones.map((zone) => (
               <g key={`beacon-${zone.id}`} className="wave-beacon-zone" style={{ '--beacon-pulse': zone.pulse } as CSSProperties}>
                 <ellipse cx={zone.x.toFixed(2)} cy={(WAVE_HEIGHT / 2).toFixed(2)} rx={zone.radiusX.toFixed(2)} ry={zone.radiusY.toFixed(2)} className="wave-beacon-halo" />
                 <ellipse cx={zone.x.toFixed(2)} cy={(WAVE_HEIGHT / 2).toFixed(2)} rx={(zone.radiusX * 0.46).toFixed(2)} ry={(zone.radiusY * 0.46).toFixed(2)} className="wave-beacon-core" />
               </g>
+            ))}
+            {relayNodes.map((relay) => (
+              <circle key={`relay-ripple-${relay.id}`} cx={relay.x.toFixed(2)} cy={(WAVE_HEIGHT / 2).toFixed(2)} r={(9 + relay.pulse * 10).toFixed(2)} className="wave-relay-ripple" />
             ))}
             {relayNodes.map((relay) => (
               <g key={`relay-${relay.id}`} className="wave-relay-node" style={{ '--relay-pulse': relay.pulse } as CSSProperties}>
@@ -522,7 +546,15 @@ function App() {
         <div className="panel">
           <h3>Control Console</h3>
           <button className="big" onClick={handleManualScan}>Manual Scan +{formatNumber(clickPower)} Signal</button>
-          <p className="muted">Run loop: Signal → DP → Relays → Beacons.</p>
+          <p className="muted">Run loop: Source → attenuation → relays → noise suppression → output.</p>
+          <label className="source-select">
+            Active source:
+            <select value={state.activeSourceId} onChange={(event) => dispatch({ type: 'LOAD_STATE', payload: { ...state, activeSourceId: event.target.value } })}>
+              {SIGNAL_SOURCES.map((candidate) => (
+                <option key={candidate.id} value={candidate.id}>{candidate.name} ({candidate.distance} AU)</option>
+              ))}
+            </select>
+          </label>
           <label>
             <input
               type="checkbox"

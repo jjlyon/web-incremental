@@ -1,4 +1,4 @@
-import { BeaconUpgradeDef, GameState, GeneratorDef, MilestoneDef, RelayProtocolDef, RelayUpgradeDef, UpgradeDef } from './types';
+import { BeaconUpgradeDef, GameState, GeneratorDef, MilestoneDef, RelayProtocolDef, RelayUpgradeDef, SignalSource, UpgradeDef } from './types';
 
 export const BALANCE = {
   relayBaseGlobalPerRelay: 0.025,
@@ -9,7 +9,20 @@ export const BALANCE = {
   beaconBaseSignal: 1e18,
   beaconSignalExponent: 0.2,
   beaconRelayExponent: 0.72,
+  defaultFalloffFactor: 0.15,
+  relayAttenuationReductionPerLevel: 0.08,
+  relayNetworkBoostPerLevel: 0.06,
 } as const;
+
+
+
+export const SIGNAL_SOURCES: SignalSource[] = [
+  { id: 'local_satellite', name: 'Local Satellite', distance: 1, baseSignal: 38, frequency: 0.7 },
+  { id: 'lunar_reflector', name: 'Lunar Reflector', distance: 3, baseSignal: 84, frequency: 1.05 },
+  { id: 'deep_space_probe', name: 'Deep Space Probe', distance: 8, baseSignal: 180, frequency: 1.45 },
+  { id: 'pulsar', name: 'Pulsar', distance: 15, baseSignal: 420, frequency: 2.2 },
+  { id: 'alien_beacon', name: 'Alien Beacon', distance: 30, baseSignal: 1200, frequency: 3.1 },
+];
 
 export const GENERATORS: GeneratorDef[] = [
   { id: 'scanner', name: 'Handheld Scanner', baseCost: 15, costGrowth: 1.15, baseSps: 0.2 },
@@ -58,12 +71,12 @@ export const RELAY_PROTOCOLS: RelayProtocolDef[] = [
 ];
 
 export const RELAY_UPGRADES: RelayUpgradeDef[] = [
-  { id: 'relay_efficiency', name: 'Relay Efficiency', description: 'Repeatable: Relays are 5% more effective.', cost: 1, tier: 1, unlockAtRelays: 0, repeatable: true, costGrowth: 1.35 },
+  { id: 'relay_efficiency', name: 'Amplifier Coil', description: 'Repeatable: +15% relay amplification.', cost: 1, tier: 1, unlockAtRelays: 0, repeatable: true, costGrowth: 1.35 },
   { id: 'lean_procurement', name: 'Lean Procurement', description: 'Scanners and Dishes cost 10% less.', cost: 2, tier: 1, unlockAtRelays: 0 },
-  { id: 'finding_archive', name: 'Finding Archive', description: 'Discovery Point rewards from findings +25%.', cost: 4, tier: 2, unlockAtRelays: 5 },
-  { id: 'spectral_refinement', name: 'Spectral Refinement', description: 'Noise grows 12% slower.', cost: 5, tier: 2, unlockAtRelays: 5 },
+  { id: 'finding_archive', name: 'Signal Repeater', description: 'Discovery Point rewards from findings +25% and relay cascades become stronger.', cost: 4, tier: 2, unlockAtRelays: 5 },
+  { id: 'spectral_refinement', name: 'Phased Relay', description: 'Reduces attenuation between relay segments by 8%.', cost: 5, tier: 2, unlockAtRelays: 5 },
   { id: 'autonomous_scanners', name: 'Autonomous Scanner Swarm', description: 'Auto scans perform +1.5 scans/sec.', cost: 6, tier: 2, unlockAtRelays: 5 },
-  { id: 'resonant_interface', name: 'Resonant Interface', description: 'Structural: manual scans gain +2% of SPS.', cost: 10, tier: 3, unlockAtRelays: 15 },
+  { id: 'resonant_interface', name: 'Quantum Relay Network', description: 'Structural: network-wide relay multiplier +6% per level.', cost: 10, tier: 3, unlockAtRelays: 15 },
   { id: 'forward_outpost', name: 'Forward Outpost', description: 'Structural: start each run with +1 Dish Array.', cost: 12, tier: 3, unlockAtRelays: 15 },
 ];
 

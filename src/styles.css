@@ -151,6 +151,7 @@ textarea { width: 100%; margin-top: 0.3rem; background: #0f131b; color: #d4d8df;
 .wave-stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
   gap: 0.35rem;
   margin-bottom: 0.45rem;
   font-size: 0.8rem;
@@ -207,4 +208,31 @@ textarea { width: 100%; margin-top: 0.3rem; background: #0f131b; color: #d4d8df;
   stroke: #b2e2ff;
   stroke-width: 1.4;
   opacity: calc(0.3 + var(--relay-pulse) * 0.7);
+}
+
+
+.wave-end-label {
+  fill: #8fa5c9;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.wave-relay-ripple {
+  fill: none;
+  stroke: rgba(129, 200, 255, 0.42);
+  stroke-width: 1;
+}
+
+.source-select {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.45rem;
+}
+
+.source-select select {
+  background: #0f131b;
+  color: #d4d8df;
+  border: 1px solid #48556e;
+  padding: 0.2rem 0.35rem;
 }
