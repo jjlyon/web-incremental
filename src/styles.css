@@ -167,3 +167,31 @@ textarea { width: 100%; margin-top: 0.3rem; background: #0f131b; color: #d4d8df;
 .wave-line-secondary {
   stroke-width: 1.1;
 }
+
+.wave-beacon-zone {
+  mix-blend-mode: screen;
+}
+.wave-beacon-halo {
+  fill: rgba(138, 226, 255, 0.1);
+  stroke: rgba(138, 226, 255, 0.42);
+  stroke-width: 1.2;
+  opacity: calc(0.35 + var(--beacon-pulse) * 0.55);
+  filter: drop-shadow(0 0 5px rgba(138, 226, 255, 0.45));
+}
+.wave-beacon-core {
+  fill: rgba(153, 255, 208, 0.13);
+  stroke: rgba(153, 255, 208, 0.5);
+  stroke-width: 1;
+  opacity: calc(0.3 + var(--beacon-pulse) * 0.55);
+}
+.wave-relay-bar {
+  stroke: #81c8ff;
+  stroke-width: 1.8;
+  opacity: calc(0.25 + var(--relay-pulse) * 0.75);
+  filter: drop-shadow(0 0 5px rgba(129, 200, 255, 0.45));
+}
+.wave-relay-top {
+  stroke: #b2e2ff;
+  stroke-width: 1.4;
+  opacity: calc(0.3 + var(--relay-pulse) * 0.7);
+}
