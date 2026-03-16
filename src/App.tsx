@@ -40,6 +40,7 @@ const WAVE_FREQUENCIES = [0.45, 0.9, 1.8, 3, 4.8, 7.2];
 const WAVE_COLORS = ['#67f3a1', '#6ad5ff', '#9b8cff', '#c5ff6a', '#ffba6a', '#ff6a9f'];
 const CLICK_MARKER_LIFETIME_SECONDS = 4.8;
 const CLICK_MARKER_SCROLL_PIXELS_PER_SECOND = 210;
+const WAVE_EDGE_PADDING = 54;
 const generatorWaveOrder: GeneratorId[] = ['scanner', 'dish', 'sifter', 'probe', 'supercomputer', 'correlator'];
 
 type ClickMarker = { id: number; createdAt: number; amplitude: number };
@@ -169,6 +170,11 @@ function App() {
   const hasAffordableBeaconUpgrade = BEACON_UPGRADES.some((up) => canPurchaseBeaconUpgrade(state, up.id));
   const hasRelayLayerUnlocked = state.totalRelaysEarned > 0 || state.relays > 0 || state.relayEnergy > 0 || canPrestige(state) || canPrestigeNow;
   const hasBeaconLayerUnlocked = state.beacons > 0 || state.networkFragments > 0 || canBeaconReset(state) || canBeaconNow;
+  const effectiveTotalRelays = Math.max(state.totalRelaysEarned, state.relays);
+  const showBeaconTab = hasBeaconLayerUnlocked || hasRelayLayerUnlocked;
+  const beaconRelayProgress = Math.min(1, effectiveTotalRelays / BALANCE.beaconUnlockRelays);
+  const beaconSignalProgress = Math.min(1, state.totalSignalEarned / BALANCE.beaconUnlockSignal);
+  const beaconUnlockProgress = Math.max(beaconRelayProgress, beaconSignalProgress);
   const unlockedBuyMax = state.upgrades.unlock_buy_max > 0;
 
   const renderGenerators = () => (
@@ -234,6 +240,17 @@ function App() {
         <p className="muted">Current relay contribution: +{formatNumber(relayBaseContribution)}% global production.</p>
         <p className="muted">Relay Energy per unspent Relay: {formatNumber(relayEnergyPerRelay)} (applies to current unspent relays + newly gained relays each reset).</p>
         <button disabled={!canPrestigeNow} onClick={() => dispatch({ type: 'PRESTIGE' })}>Initiate Relay Reset</button>
+        <div className="inset beacon-status">
+          <strong>Beacon Unlock Status</strong>
+          {canBeaconReset(state) ? (
+            <p className="muted">Beacon reset is unlocked. Open the Beacon tab to initialize and gain Network Fragments.</p>
+          ) : (
+            <>
+              <p className="muted">Need either {BALANCE.beaconUnlockRelays} total relays or {BALANCE.beaconUnlockSignal.toExponential(0)} total signal.</p>
+              <p className="muted">Progress: {formatNumber(effectiveTotalRelays)}/{formatNumber(BALANCE.beaconUnlockRelays)} relays • {formatNumber(state.totalSignalEarned)}/{formatNumber(BALANCE.beaconUnlockSignal)} signal</p>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="panel">
@@ -285,6 +302,12 @@ function App() {
         <h3>Beacon Network</h3>
         <p className="muted">Unlock at {BALANCE.beaconUnlockRelays} total relays or {BALANCE.beaconUnlockSignal.toExponential(0)} total signal.</p>
         <p className="muted">Keeps: Beacons, Fragments, Beacon upgrades, findings. Resets: Signal, DP, Relays, Relay Energy, Relay Protocols/Upgrades.</p>
+        {!canBeaconReset(state) && (
+          <>
+            <p className="muted">Current progress: {formatNumber(effectiveTotalRelays)}/{formatNumber(BALANCE.beaconUnlockRelays)} relays or {formatNumber(state.totalSignalEarned)}/{formatNumber(BALANCE.beaconUnlockSignal)} signal.</p>
+            <div className="beacon-progress"><span style={{ width: `${(beaconUnlockProgress * 100).toFixed(1)}%` }} /></div>
+          </>
+        )}
         <p>Projection if reset now: <strong>+{formatNumber(beaconGain)} Network Fragments</strong>.</p>
         <button disabled={!canBeaconNow} onClick={() => dispatch({ type: 'BEACON_RESET' })}>Initialize Beacon Reset</button>
       </div>
@@ -352,7 +375,35 @@ function App() {
   const cleanAmplitude = (undampenedSps / aggregateScaleSps) * 34;
   const effectiveAmplitude = (sps / aggregateScaleSps) * 34;
   const suppressionIntensity = Math.max(0, Math.min(1, noiseImpactPercent / 100));
+  const relayCount = Math.max(0, Math.floor(state.relays));
+  const beaconCount = Math.max(0, Math.floor(state.beacons));
   const sampleXs = Array.from({ length: Math.floor(WAVE_WIDTH / WAVE_SAMPLE_STEP) + 1 }, (_, i) => i * WAVE_SAMPLE_STEP);
+  const normalizedSlots = (count: number): number[] => {
+    if (count <= 0) return [];
+    const left = count > 6 ? 0.08 : 0.14;
+    const right = count > 6 ? 0.92 : 0.86;
+    return Array.from({ length: count }, (_, i) => left + ((i + 1) / (count + 1)) * (right - left));
+  };
+  const relayNodes = normalizedSlots(Math.min(20, relayCount)).map((slot, index) => {
+    const x = WAVE_EDGE_PADDING + slot * (WAVE_WIDTH - WAVE_EDGE_PADDING * 2);
+    const phase = waveTime * 2.8 - (x / WAVE_WIDTH) * 6.2;
+    const pulse = (Math.sin(phase) + 1) / 2;
+    return { id: `${index}-${x.toFixed(2)}`, x, pulse };
+  });
+  const beaconZones = normalizedSlots(Math.min(10, beaconCount)).map((slot, index) => {
+    const x = WAVE_EDGE_PADDING + slot * (WAVE_WIDTH - WAVE_EDGE_PADDING * 2);
+    const pulse = 0.55 + ((Math.sin(waveTime * 1.1 + index * 0.9) + 1) / 2) * 0.45;
+    const radiusX = Math.max(48, Math.min(110, 62 + suppressionIntensity * 44));
+    const radiusY = Math.max(18, Math.min(36, 22 + suppressionIntensity * 14));
+    return { id: `${index}-${x.toFixed(2)}`, x, pulse, radiusX, radiusY };
+  });
+  const beaconSuppressionAt = (x: number): number => {
+    if (beaconZones.length === 0) return 0;
+    return Math.min(1, beaconZones.reduce((acc, zone) => {
+      const distance = (x - zone.x) / zone.radiusX;
+      return acc + Math.exp(-(distance * distance) * 2.2) * 0.7;
+    }, 0));
+  };
   const cleanPoints = sampleXs.map((x) => {
     const radians = (x / WAVE_WIDTH) * 1.05 * Math.PI * 2 + waveTime * WAVE_SPEED * 0.85;
     const y = WAVE_HEIGHT / 2 + Math.sin(radians) * cleanAmplitude;
@@ -360,7 +411,9 @@ function App() {
   });
   const effectivePoints = sampleXs.map((x) => {
     const radians = (x / WAVE_WIDTH) * 1.05 * Math.PI * 2 + waveTime * WAVE_SPEED * 0.85;
-    const shimmer = (Math.sin((x / WAVE_WIDTH) * 16 + waveTime * 8) + Math.sin((x / WAVE_WIDTH) * 30 + waveTime * 15) * 0.6) * (0.5 + suppressionIntensity * 3.2);
+    const beaconSuppression = beaconSuppressionAt(x);
+    const shimmerBase = (Math.sin((x / WAVE_WIDTH) * 16 + waveTime * 8) + Math.sin((x / WAVE_WIDTH) * 30 + waveTime * 15) * 0.6) * (0.5 + suppressionIntensity * 3.2);
+    const shimmer = shimmerBase * (1 - beaconSuppression * 0.75);
     const y = WAVE_HEIGHT / 2 + Math.sin(radians) * effectiveAmplitude + shimmer;
     return { x, y };
   });
@@ -368,6 +421,13 @@ function App() {
   const cleanPath = toPath(cleanPoints);
   const effectivePath = toPath(effectivePoints);
   const suppressionBandPath = `${toPath(cleanPoints)} ${[...effectivePoints].reverse().map((point) => `L${point.x},${point.y.toFixed(2)}`).join(' ')} Z`;
+  const oscilloscopeData = {
+    relays: relayCount,
+    beacons: beaconCount,
+    noiseLevel: suppressionIntensity,
+    cleanSignal: cleanPoints.map((point) => point.y),
+    effectiveSignal: effectivePoints.map((point) => point.y),
+  };
 
 
   const scannerFrequency = WAVE_FREQUENCIES[0];
@@ -411,10 +471,26 @@ function App() {
             <span>-{formatNumber(aggregateScaleSps)} SPS</span>
           </div>
           <svg viewBox={`0 0 ${WAVE_WIDTH} ${WAVE_HEIGHT}`} className="wave-display" role="img" aria-label="Integrated signal and noise oscilloscope">
+            <defs>
+              <pattern id="waveGrid" width="40" height="20" patternUnits="userSpaceOnUse">
+                <path d="M 40 0 L 0 0 0 20" fill="none" stroke="#1f2c42" strokeWidth="0.8" />
+              </pattern>
+            </defs>
+            <rect x="0" y="0" width={WAVE_WIDTH} height={WAVE_HEIGHT} fill="url(#waveGrid)" opacity="0.62" />
             <path d={`M0,${WAVE_HEIGHT / 2} H${WAVE_WIDTH}`} className="wave-baseline" />
             <path d={suppressionBandPath} className="wave-suppression-band" style={{ opacity: 0.12 + suppressionIntensity * 0.26 }} />
-            <path d={cleanPath} className="wave-clean-line" />
-            <path d={effectivePath} className="wave-effective-line" style={{ opacity: 0.82 + suppressionIntensity * 0.18 }} />
+            {beaconZones.map((zone) => (
+              <g key={`beacon-${zone.id}`} className="wave-beacon-zone" style={{ '--beacon-pulse': zone.pulse } as CSSProperties}>
+                <ellipse cx={zone.x.toFixed(2)} cy={(WAVE_HEIGHT / 2).toFixed(2)} rx={zone.radiusX.toFixed(2)} ry={zone.radiusY.toFixed(2)} className="wave-beacon-halo" />
+                <ellipse cx={zone.x.toFixed(2)} cy={(WAVE_HEIGHT / 2).toFixed(2)} rx={(zone.radiusX * 0.46).toFixed(2)} ry={(zone.radiusY * 0.46).toFixed(2)} className="wave-beacon-core" />
+              </g>
+            ))}
+            {relayNodes.map((relay) => (
+              <g key={`relay-${relay.id}`} className="wave-relay-node" style={{ '--relay-pulse': relay.pulse } as CSSProperties}>
+                <line x1={relay.x.toFixed(2)} x2={relay.x.toFixed(2)} y1={(WAVE_HEIGHT * 0.2).toFixed(2)} y2={(WAVE_HEIGHT * 0.8).toFixed(2)} className="wave-relay-bar" />
+                <line x1={(relay.x - 6).toFixed(2)} x2={(relay.x + 6).toFixed(2)} y1={(WAVE_HEIGHT * 0.2).toFixed(2)} y2={(WAVE_HEIGHT * 0.2).toFixed(2)} className="wave-relay-top" />
+              </g>
+            ))}
             {visibleGeneratorWaves.map((wave) => (
               <path
                 key={wave.generatorId}
@@ -423,13 +499,15 @@ function App() {
                 style={{ stroke: wave.color, opacity: 0.2 + Math.min(0.35, suppressionIntensity * 0.2) }}
               />
             ))}
+            <path d={cleanPath} className="wave-clean-line" />
+            <path d={effectivePath} className="wave-effective-line" style={{ opacity: 0.82 + suppressionIntensity * 0.18 + oscilloscopeData.beacons * 0.005 }} />
             {visibleClickMarkers.map((marker) => <circle key={`click-${marker.id}`} cx={marker.x.toFixed(2)} cy={marker.y.toFixed(2)} r={2.8} className="wave-click-marker" />)}
           </svg>
         </div>
         <div className="wave-legend">{visibleGeneratorWaves.length > 0 ? visibleGeneratorWaves.map((wave) => <span key={`${wave.generatorId}-legend`} className="wave-legend-item" style={{ '--wave-color': wave.color } as CSSProperties}>{wave.generatorName}: {formatNumber(wave.contributionSps)} SPS</span>) : <span className="muted">No unlocked generators yet.</span>}</div>
       </div>
 
-      <div className="tabs">{tabs.filter((tab) => tab !== 'Beacon' || hasBeaconLayerUnlocked).map((tab) => {
+      <div className="tabs">{tabs.filter((tab) => tab !== 'Beacon' || showBeaconTab).map((tab) => {
         const hasAttention =
           (tab === 'Generators' && hasAffordableGenerator) ||
           (tab === 'Upgrades' && hasAffordableSignalUpgrade) ||
@@ -469,7 +547,7 @@ function App() {
       {state.currentTab === 'DP Upgrades' && <div className="panel"><h3>DP Upgrades</h3>{renderUpgradeRows('dp')}</div>}
       {state.currentTab === 'Findings' && renderFindings()}
       {state.currentTab === 'Relay' && renderRelay()}
-      {state.currentTab === 'Beacon' && hasBeaconLayerUnlocked && renderBeacon()}
+      {state.currentTab === 'Beacon' && renderBeacon()}
       {state.currentTab === 'Stats' && (
         <div className="panel"><h3>Stats & Save Tools</h3><div>Total Signal Earned: {formatNumber(state.totalSignalEarned)}</div><div>Last Save: {new Date(state.lastSaveAt).toLocaleTimeString()}</div>
           <div className="actions"><button onClick={() => { saveGame(state); dispatch({ type: 'UPDATE_SAVE_TIME', now: Date.now() }); }}>Manual Save</button><button onClick={() => { clearSave(); dispatch({ type: 'HARD_RESET' }); }}>Hard Reset</button></div>

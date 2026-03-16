@@ -86,7 +86,10 @@ const parseGameState = (raw: string): GameState | null => {
       noise: hasNumber(parsed, 'noise') ? (parsed.noise as number) : 0,
       dp: hasNumber(parsed, 'dp') ? (parsed.dp as number) : 0,
       relays: hasNumber(parsed, 'relays') ? (parsed.relays as number) : 0,
-      totalRelaysEarned: hasNumber(parsed, 'totalRelaysEarned') ? (parsed.totalRelaysEarned as number) : 0,
+      totalRelaysEarned: Math.max(
+        hasNumber(parsed, 'totalRelaysEarned') ? (parsed.totalRelaysEarned as number) : 0,
+        hasNumber(parsed, 'relays') ? (parsed.relays as number) : 0,
+      ),
       relayEnergy: hasNumber(parsed, 'relayEnergy') ? (parsed.relayEnergy as number) : 0,
       networkFragments: hasNumber(parsed, 'networkFragments') ? (parsed.networkFragments as number) : 0,
       beacons: hasNumber(parsed, 'beacons') ? (parsed.beacons as number) : 0,

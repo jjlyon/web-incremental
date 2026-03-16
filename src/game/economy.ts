@@ -206,13 +206,15 @@ export const getPrestigeGain = (state: GameState): number => {
 export const canPrestige = (state: GameState): boolean =>
   state.generators.correlator >= 1 || state.totalSignalEarned >= BALANCE.relayPrestigeBase;
 
+const getEffectiveTotalRelays = (state: GameState): number => Math.max(state.totalRelaysEarned, state.relays);
+
 export const canBeaconReset = (state: GameState): boolean =>
-  state.totalRelaysEarned >= BALANCE.beaconUnlockRelays || state.totalSignalEarned >= BALANCE.beaconUnlockSignal;
+  getEffectiveTotalRelays(state) >= BALANCE.beaconUnlockRelays || state.totalSignalEarned >= BALANCE.beaconUnlockSignal;
 
 export const getBeaconProjection = (state: GameState): number => {
   if (!canBeaconReset(state)) return 0;
   const signalTerm = Math.pow(Math.max(1, state.totalSignalEarned / BALANCE.beaconBaseSignal), BALANCE.beaconSignalExponent);
-  const relayTerm = Math.pow(Math.max(0, state.totalRelaysEarned), BALANCE.beaconRelayExponent) / 8;
+  const relayTerm = Math.pow(Math.max(0, getEffectiveTotalRelays(state)), BALANCE.beaconRelayExponent) / 8;
   return Math.max(1, Math.floor(signalTerm + relayTerm));
 };
 
