@@ -170,6 +170,11 @@ function App() {
   const hasAffordableBeaconUpgrade = BEACON_UPGRADES.some((up) => canPurchaseBeaconUpgrade(state, up.id));
   const hasRelayLayerUnlocked = state.totalRelaysEarned > 0 || state.relays > 0 || state.relayEnergy > 0 || canPrestige(state) || canPrestigeNow;
   const hasBeaconLayerUnlocked = state.beacons > 0 || state.networkFragments > 0 || canBeaconReset(state) || canBeaconNow;
+  const effectiveTotalRelays = Math.max(state.totalRelaysEarned, state.relays);
+  const showBeaconTab = hasBeaconLayerUnlocked || hasRelayLayerUnlocked;
+  const beaconRelayProgress = Math.min(1, effectiveTotalRelays / BALANCE.beaconUnlockRelays);
+  const beaconSignalProgress = Math.min(1, state.totalSignalEarned / BALANCE.beaconUnlockSignal);
+  const beaconUnlockProgress = Math.max(beaconRelayProgress, beaconSignalProgress);
   const unlockedBuyMax = state.upgrades.unlock_buy_max > 0;
 
   const renderGenerators = () => (
@@ -235,6 +240,17 @@ function App() {
         <p className="muted">Current relay contribution: +{formatNumber(relayBaseContribution)}% global production.</p>
         <p className="muted">Relay Energy per unspent Relay: {formatNumber(relayEnergyPerRelay)} (applies to current unspent relays + newly gained relays each reset).</p>
         <button disabled={!canPrestigeNow} onClick={() => dispatch({ type: 'PRESTIGE' })}>Initiate Relay Reset</button>
+        <div className="inset beacon-status">
+          <strong>Beacon Unlock Status</strong>
+          {canBeaconReset(state) ? (
+            <p className="muted">Beacon reset is unlocked. Open the Beacon tab to initialize and gain Network Fragments.</p>
+          ) : (
+            <>
+              <p className="muted">Need either {BALANCE.beaconUnlockRelays} total relays or {BALANCE.beaconUnlockSignal.toExponential(0)} total signal.</p>
+              <p className="muted">Progress: {formatNumber(effectiveTotalRelays)}/{formatNumber(BALANCE.beaconUnlockRelays)} relays • {formatNumber(state.totalSignalEarned)}/{formatNumber(BALANCE.beaconUnlockSignal)} signal</p>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="panel">
@@ -286,6 +302,12 @@ function App() {
         <h3>Beacon Network</h3>
         <p className="muted">Unlock at {BALANCE.beaconUnlockRelays} total relays or {BALANCE.beaconUnlockSignal.toExponential(0)} total signal.</p>
         <p className="muted">Keeps: Beacons, Fragments, Beacon upgrades, findings. Resets: Signal, DP, Relays, Relay Energy, Relay Protocols/Upgrades.</p>
+        {!canBeaconReset(state) && (
+          <>
+            <p className="muted">Current progress: {formatNumber(effectiveTotalRelays)}/{formatNumber(BALANCE.beaconUnlockRelays)} relays or {formatNumber(state.totalSignalEarned)}/{formatNumber(BALANCE.beaconUnlockSignal)} signal.</p>
+            <div className="beacon-progress"><span style={{ width: `${(beaconUnlockProgress * 100).toFixed(1)}%` }} /></div>
+          </>
+        )}
         <p>Projection if reset now: <strong>+{formatNumber(beaconGain)} Network Fragments</strong>.</p>
         <button disabled={!canBeaconNow} onClick={() => dispatch({ type: 'BEACON_RESET' })}>Initialize Beacon Reset</button>
       </div>
@@ -485,7 +507,7 @@ function App() {
         <div className="wave-legend">{visibleGeneratorWaves.length > 0 ? visibleGeneratorWaves.map((wave) => <span key={`${wave.generatorId}-legend`} className="wave-legend-item" style={{ '--wave-color': wave.color } as CSSProperties}>{wave.generatorName}: {formatNumber(wave.contributionSps)} SPS</span>) : <span className="muted">No unlocked generators yet.</span>}</div>
       </div>
 
-      <div className="tabs">{tabs.filter((tab) => tab !== 'Beacon' || hasBeaconLayerUnlocked).map((tab) => {
+      <div className="tabs">{tabs.filter((tab) => tab !== 'Beacon' || showBeaconTab).map((tab) => {
         const hasAttention =
           (tab === 'Generators' && hasAffordableGenerator) ||
           (tab === 'Upgrades' && hasAffordableSignalUpgrade) ||
@@ -525,7 +547,7 @@ function App() {
       {state.currentTab === 'DP Upgrades' && <div className="panel"><h3>DP Upgrades</h3>{renderUpgradeRows('dp')}</div>}
       {state.currentTab === 'Findings' && renderFindings()}
       {state.currentTab === 'Relay' && renderRelay()}
-      {state.currentTab === 'Beacon' && hasBeaconLayerUnlocked && renderBeacon()}
+      {state.currentTab === 'Beacon' && renderBeacon()}
       {state.currentTab === 'Stats' && (
         <div className="panel"><h3>Stats & Save Tools</h3><div>Total Signal Earned: {formatNumber(state.totalSignalEarned)}</div><div>Last Save: {new Date(state.lastSaveAt).toLocaleTimeString()}</div>
           <div className="actions"><button onClick={() => { saveGame(state); dispatch({ type: 'UPDATE_SAVE_TIME', now: Date.now() }); }}>Manual Save</button><button onClick={() => { clearSave(); dispatch({ type: 'HARD_RESET' }); }}>Hard Reset</button></div>
